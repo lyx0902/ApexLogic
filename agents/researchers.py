@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any, Dict, List
+from urllib.parse import urlparse
 
 try:
     from core.state import ResearchState
@@ -29,7 +30,11 @@ def _append_error(errors: List[str], message: str) -> List[str]:
     return updated
 
 
-def _build_queries(topic: str, critique_feedback: str) -> List[str]:
+def _build_queries(
+    topic: str,
+    critique_feedback: str,
+    revision_directives: Dict[str, Any] | None = None,
+) -> List[str]:
     """构建检索词：首轮按主题展开，迭代轮次融合评审反馈。"""
 
     queries = [
@@ -40,6 +45,15 @@ def _build_queries(topic: str, critique_feedback: str) -> List[str]:
 
     if critique_feedback:
         queries.append(f"{topic} 针对问题补充: {critique_feedback[:80]}")
+
+    directives = revision_directives or {}
+    info_gaps = directives.get("info_gaps", [])
+    must_fix = directives.get("must_fix", [])
+
+    for gap in info_gaps[:2]:
+        queries.append(f"{topic} 补充信息缺口: {str(gap)[:60]}")
+    for item in must_fix[:2]:
+        queries.append(f"{topic} 证据核查: {str(item)[:60]}")
 
     return queries
 
@@ -63,7 +77,7 @@ def _rewrite_queries_with_llm(
 
     llm = ChatOpenAI(
         model=deepseek_model,
-        api_key=deepseek_api_key,
+        api_key=lambda: deepseek_api_key,
         base_url=deepseek_base_url,
         temperature=0.2,
     )
@@ -111,6 +125,74 @@ def _normalize_context_item(item: Dict[str, Any] | str) -> Dict[str, Any]:
     }
 
 
+def _score_source_quality(item: Dict[str, Any]) -> Dict[str, Any]:
+    """根据 source + domain 粗粒度评估来源质量。"""
+
+    source = str(item.get("source", "")).lower().strip()
+    url = str(item.get("url", "")).strip().lower()
+    domain = urlparse(url).netloc if url else ""
+
+    score = 0.5
+    tier = "C"
+    reason = "默认分层"
+
+    # 论文与学术来源优先
+    if source == "arxiv" or "arxiv.org" in domain:
+        score = 0.95
+        tier = "A"
+        reason = "学术预印本"
+    # 官方文档和标准机构
+    elif any(x in domain for x in ["openai.com", "google.com", "deepmind.com", "anthropic.com", "ietf.org", "iso.org", "nist.gov", "learn.microsoft.com"]):
+        score = 0.9
+        tier = "A"
+        reason = "官方或标准机构"
+    # 主流技术媒体/行业报告
+    elif any(x in domain for x in ["nature.com", "science.org", "ieee.org", "acm.org", "mckinsey.com", "gartner.com", "forrester.com"]):
+        score = 0.82
+        tier = "B"
+        reason = "高可信行业媒体或机构"
+    # 聚合搜索结果的基础可信度
+    elif source == "tavily":
+        score = 0.72
+        tier = "B"
+        reason = "聚合检索结果，需二次核验"
+    # 博客/论坛/未知
+    elif any(x in domain for x in ["github.com", "medium.com", "reddit.com", "zhihu.com", "csdn.net", "cnblogs.com"]):
+        score = 0.62
+        tier = "C"
+        reason = "社区内容，观点价值高但事实需交叉验证"
+
+    rated = dict(item)
+    rated["quality_score"] = round(score, 2)
+    rated["quality_tier"] = tier
+    rated["quality_reason"] = reason
+    rated["domain"] = domain
+    return rated
+
+
+def _build_quality_summary(contexts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """生成来源质量统计摘要。"""
+
+    if not contexts:
+        return {"avg_score": 0.0, "tier_counts": {"A": 0, "B": 0, "C": 0}}
+
+    tier_counts: Dict[str, int] = {"A": 0, "B": 0, "C": 0}
+    score_sum = 0.0
+    for item in contexts:
+        tier = str(item.get("quality_tier", "C"))
+        if tier not in tier_counts:
+            tier_counts[tier] = 0
+        tier_counts[tier] += 1
+        score_sum += float(item.get("quality_score", 0.0))
+
+    avg_score = round(score_sum / len(contexts), 3)
+    return {
+        "avg_score": avg_score,
+        "tier_counts": tier_counts,
+        "total": len(contexts),
+    }
+
+
 def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dict[str, Any]]:
     """按 url 或 title+source 去重，并生成连续 citation_id。"""
 
@@ -125,7 +207,7 @@ def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dic
         if key in seen:
             continue
         seen.add(key)
-        unique.append(item)
+        unique.append(_score_source_quality(item))
 
     for idx, item in enumerate(unique, start=1):
         item["citation_id"] = f"S{idx}"
@@ -142,9 +224,14 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     topic = state.get("topic", "")
     critique_feedback = state.get("critique_feedback", "")
+    revision_directives = dict(state.get("revision_directives", {}) or {})
     errors = list(state.get("errors", []))
 
-    seed_queries = _build_queries(topic=topic, critique_feedback=critique_feedback)
+    seed_queries = _build_queries(
+        topic=topic,
+        critique_feedback=critique_feedback,
+        revision_directives=revision_directives,
+    )
     queries = list(seed_queries)
 
     try:
@@ -179,6 +266,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         )
 
     normalized_contexts = _dedupe_and_index_contexts(contexts)
+    source_quality_summary = _build_quality_summary(normalized_contexts)
     trace = list(state.get("execution_trace", []))
     trace.append(
         {
@@ -186,6 +274,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "revision_step": state.get("revision_step", 0),
             "queries": len(queries),
             "contexts": len(normalized_contexts),
+            "quality_avg": source_quality_summary.get("avg_score", 0.0),
             "errors": len(errors),
         }
     )
@@ -193,6 +282,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     return {
         "search_queries": queries,
         "retrieved_context": normalized_contexts,
+        "source_quality_summary": source_quality_summary,
         "errors": errors,
         "execution_trace": trace,
     }

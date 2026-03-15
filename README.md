@@ -26,8 +26,13 @@ pip install -r requirements.txt
 ## 3) 运行
 
 ```bash
-python main.py --topic "多智能体系统在科研自动化中的应用"
+python main.py --topic "多智能体系统在科研自动化中的应用" --report-length medium --output-mode debug
 ```
+
+可选参数：
+
+- `--report-length {short,medium,long}`：控制正文篇幅和细节粒度。
+- `--output-mode {user,debug}`：控制导出呈现方式。
 
 ## 4) 当前实现说明
 
@@ -75,11 +80,29 @@ python main.py --topic "多智能体系统在科研自动化中的应用"
 ## 7) 导出完整报告（不改变 `main.py` 输出）
 
 ```bash
-python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较"
+python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较" --report-length long --output-mode debug
 ```
 
 可选参数：
 
 - `--max-revisions 1`
 - `--output reports/custom-report.md`
+- `--output-mode user`（仅输出最终报告正文）
+- `--output-mode debug`（输出每轮草稿、评审、轨迹与错误）
+
+## 8) ArXiv 工具检索逻辑
+
+`tools/arxiv_tool.py` 的执行链路如下：
+
+1. 组装 ArXiv API 请求：`https://export.arxiv.org/api/query?search_query=all:<query>&max_results=<n>`。
+2. 使用 `urllib` 发起请求，并带上 `User-Agent` 避免被服务端按匿名脚本拒绝。
+3. 使用 `certifi` 提供的 CA 证书创建 SSL 上下文，减少 Windows 证书链导致的 `CERTIFICATE_VERIFY_FAILED`。
+4. 解析 Atom XML，提取 `title / summary / link`，转换为统一上下文结构：`title/url/source/content`。
+5. 返回给 `researcher` 节点，与 Tavily 结果统一去重并打上 `citation_id`。
+
+## 9) 新增优化能力
+
+- **反馈修订映射**：`writer` 会把 `must_fix` 项映射到本轮草稿章节，`debug` 报告中可查看 `issue -> section`。
+- **篇幅硬约束**：`short/medium/long` 对应净字数区间 `800-1200` / `1800-2600` / `3200-4500`，超限会自动裁剪并记录。
+- **来源质量评分**：`researcher` 会按来源类型与域名生成 `quality_tier`（A/B/C）和 `quality_score`，并输出 `source_quality_summary`。
 

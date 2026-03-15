@@ -19,12 +19,14 @@ def _format_trace_item(item: dict[str, Any]) -> str:
     if node == "researcher":
         return (
             f"node={node} rev={revision} queries={item.get('queries', 0)} "
-            f"contexts={item.get('contexts', 0)} errors={item.get('errors', 0)}"
+            f"contexts={item.get('contexts', 0)} quality_avg={item.get('quality_avg', 0.0)} "
+            f"errors={item.get('errors', 0)}"
         )
     if node == "writer":
         return (
             f"node={node} rev={revision} mode={mode} "
-            f"draft_len={item.get('draft_len', 0)}"
+            f"draft_len={item.get('draft_len', 0)} trimmed={item.get('trimmed', False)} "
+            f"mapped={item.get('mapped_items', 0)}"
         )
     if node == "reviewer":
         return (
@@ -45,6 +47,18 @@ def parse_args() -> argparse.Namespace:
         default="多智能体系统中的反思机制与自我优化",
         help="研究主题",
     )
+    parser.add_argument(
+        "--report-length",
+        choices=["short", "medium", "long"],
+        default="medium",
+        help="报告篇幅控制",
+    )
+    parser.add_argument(
+        "--output-mode",
+        choices=["user", "debug"],
+        default="debug",
+        help="输出模式：user 仅面向读者，debug 含系统细节",
+    )
     return parser.parse_args()
 
 
@@ -58,7 +72,11 @@ def run() -> dict[str, Any]:
 
     max_revisions = int(os.getenv("MAX_REVISIONS", "3"))
     app = compile_graph(max_revisions=max_revisions)
-    initial_state = create_initial_state(topic=args.topic)
+    initial_state = create_initial_state(
+        topic=args.topic,
+        report_length=args.report_length,
+        output_mode=args.output_mode,
+    )
     final_state = app.invoke(initial_state)
 
     return final_state

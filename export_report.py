@@ -4,7 +4,7 @@ import argparse
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -32,6 +32,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="输出 markdown 文件路径（可选）",
     )
+    parser.add_argument(
+        "--report-length",
+        choices=["short", "medium", "long"],
+        default="medium",
+        help="报告篇幅控制",
+    )
+    parser.add_argument(
+        "--output-mode",
+        choices=["user", "debug"],
+        default="debug",
+        help="导出模式：user 仅最终报告；debug 包含轨迹、评审与错误信息",
+    )
     return parser.parse_args()
 
 
@@ -48,8 +60,17 @@ def _safe_filename(text: str) -> str:
     return slug[:60] or "report"
 
 
-def _render_markdown(state: ResearchState) -> str:
-    """将最终状态渲染为 markdown 报告。"""
+def _render_markdown_user(state: ResearchState) -> str:
+    """渲染面向读者的简版报告（仅最终正文）。"""
+
+    topic = state.get("topic", "")
+    report = state.get("final_report", "") or state.get("draft", "") or ""
+    lines: List[str] = [f"# 深度研究报告：{topic}", "", report if report else "(未生成正文)"]
+    return "\n".join(lines)
+
+
+def _render_markdown_debug(state: ResearchState) -> str:
+    """渲染调试版报告（含过程、评审、轨迹与错误）。"""
 
     topic = state.get("topic", "")
     report = state.get("final_report", "") or state.get("draft", "") or ""
@@ -57,6 +78,8 @@ def _render_markdown(state: ResearchState) -> str:
     contexts = state.get("retrieved_context", []) or []
     trace = state.get("execution_trace", []) or []
     errors = state.get("errors", []) or []
+    history = state.get("iteration_history", []) or []
+    quality_summary = state.get("source_quality_summary", {}) or {}
 
     lines: List[str] = []
     lines.append(f"# 深度研究报告：{topic}")
@@ -68,6 +91,10 @@ def _render_markdown(state: ResearchState) -> str:
     lines.append(f"- 下一路由建议: {state.get('next_route', '')}")
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
     lines.append(f"- 评审置信度: {review.get('confidence', 'N/A')}")
+    lines.append(f"- 报告篇幅: {state.get('report_length', 'medium')}")
+    lines.append(f"- 输出模式: {state.get('output_mode', 'debug')}")
+    lines.append(f"- 来源质量均分: {quality_summary.get('avg_score', 'N/A')}")
+    lines.append(f"- 来源质量分层: {quality_summary.get('tier_counts', {})}")
     lines.append("")
 
     lines.append("## 2. 研究正文")
@@ -103,7 +130,43 @@ def _render_markdown(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("## 4. 参考上下文摘录")
+    lines.append("## 4. 每轮草稿与评审历史")
+    lines.append("")
+    for item in history:
+        round_id = item.get("round", "-")
+        lines.append(f"### 4.{round_id} 第 {round_id} 轮")
+        lines.append("")
+        lines.append("- 草稿片段:")
+        draft_text = str(item.get("draft", "")).strip()
+        lines.append("")
+        lines.append((draft_text[:2000] + "...") if len(draft_text) > 2000 else (draft_text or "(空)"))
+        lines.append("")
+
+        review_item = item.get("review", {}) or {}
+        mapping = item.get("feedback_paragraph_mapping", []) or []
+        round_quality = item.get("source_quality_summary", {}) or {}
+        lines.append("- 评审结论:")
+        lines.append(f"  - is_satisfactory: {item.get('is_satisfactory', False)}")
+        lines.append(f"  - next_route: {item.get('next_route', '')}")
+        lines.append(f"  - critique_feedback: {review_item.get('critique_feedback', '')}")
+        lines.append(f"  - source_quality_summary: {round_quality}")
+        lines.append("")
+
+        lines.append("- 反馈修订映射（must_fix -> 章节）:")
+        if mapping:
+            for mp in mapping:
+                lines.append(
+                    f"  - issue: {mp.get('issue', '')} -> section: {mp.get('mapped_section', '')}"
+                )
+                lines.append(f"    - snippet: {mp.get('evidence_snippet', '')}")
+        else:
+            lines.append("  - 无")
+        lines.append("")
+    if not history:
+        lines.append("- 无")
+    lines.append("")
+
+    lines.append("## 5. 参考上下文摘录")
     lines.append("")
     for item in contexts[:12]:
         if isinstance(item, dict):
@@ -122,7 +185,7 @@ def _render_markdown(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("## 5. 执行轨迹")
+    lines.append("## 6. 执行轨迹")
     lines.append("")
     for idx, item in enumerate(trace, start=1):
         lines.append(f"{idx}. {item}")
@@ -130,7 +193,7 @@ def _render_markdown(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("## 6. 错误与降级记录")
+    lines.append("## 7. 错误与降级记录")
     lines.append("")
     if errors:
         lines.extend([f"- {item}" for item in errors])
@@ -140,7 +203,21 @@ def _render_markdown(state: ResearchState) -> str:
     return "\n".join(lines)
 
 
-def run_and_export(topic: str, max_revisions: int | None, output: str | None) -> str:
+def _render_markdown(state: ResearchState) -> str:
+    """根据 output_mode 自动选择渲染模板。"""
+
+    if state.get("output_mode", "debug") == "user":
+        return _render_markdown_user(state)
+    return _render_markdown_debug(state)
+
+
+def run_and_export(
+    topic: str,
+    max_revisions: int | None,
+    output: str | None,
+    report_length: str,
+    output_mode: str,
+) -> str:
     """执行图并导出 markdown 报告，返回输出路径。"""
 
     env_loaded = load_dotenv()
@@ -152,7 +229,11 @@ def run_and_export(topic: str, max_revisions: int | None, output: str | None) ->
         actual_max_revisions = int(os.getenv("MAX_REVISIONS", "3"))
 
     app = compile_graph(max_revisions=actual_max_revisions)
-    initial_state = create_initial_state(topic=topic)
+    initial_state = create_initial_state(
+        topic=topic,
+        report_length=report_length if report_length in {"short", "medium", "long"} else "medium",
+        output_mode=output_mode if output_mode in {"user", "debug"} else "debug",
+    )
     state: ResearchState = app.invoke(initial_state)
 
     reports_dir = Path("reports")
@@ -174,6 +255,8 @@ if __name__ == "__main__":
         topic=args.topic,
         max_revisions=args.max_revisions,
         output=args.output,
+        report_length=args.report_length,
+        output_mode=args.output_mode,
     )
     print(f"[EXPORT] report saved: {path}")
 

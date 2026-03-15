@@ -123,6 +123,39 @@ def _rule_based_review(
     }
 
 
+def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[str, Any]:
+    """将评审结果转换为可执行修订包，供 Writer/Researcher 下一轮消费。"""
+
+    fact_issues = _to_issue_list(review.get("fact_issues", []))
+    logic_issues = _to_issue_list(review.get("logic_issues", []))
+    info_gaps = _to_issue_list(review.get("info_gaps", []))
+
+    if next_route == ROUTE_RESEARCHER:
+        route_reason = "当前证据不足，优先补齐检索材料后再写作。"
+        focus_areas = ["补充高质量来源", "覆盖相反观点", "补齐评测细节"]
+        must_fix = info_gaps or ["新增可验证来源并补充关键证据"]
+    elif next_route == ROUTE_WRITER:
+        route_reason = "证据基本可用，但草稿存在事实或逻辑问题，需定向改写。"
+        focus_areas = ["修复事实引用", "补全论证链", "提升结论可执行性"]
+        must_fix = fact_issues + logic_issues
+        if not must_fix:
+            must_fix = ["逐条响应 critique_feedback 并修订对应段落"]
+    else:
+        route_reason = "评审通过。"
+        focus_areas = []
+        must_fix = []
+
+    return {
+        "next_route": next_route,
+        "route_reason": route_reason,
+        "must_fix": must_fix[:8],
+        "focus_areas": focus_areas,
+        "fact_issues": fact_issues,
+        "logic_issues": logic_issues,
+        "info_gaps": info_gaps,
+    }
+
+
 def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
     """调用 DeepSeek 输出结构化评审 JSON。"""
 
@@ -138,7 +171,7 @@ def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
 
     llm = ChatOpenAI(
         model=deepseek_model,
-        api_key=deepseek_api_key,
+        api_key=lambda: deepseek_api_key,
         base_url=deepseek_base_url,
         temperature=0.0,
     )
@@ -194,12 +227,15 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         review = _rule_based_review(draft=draft, retrieved_context=retrieved_context)
 
     is_satisfactory = bool(review.get("is_satisfactory", False))
-    needs_more_research = bool(review.get("needs_more_research", False))
+    info_gaps = _to_issue_list(review.get("info_gaps", []))
+    needs_more_research = bool(review.get("needs_more_research", False) or info_gaps)
 
     if is_satisfactory:
         next_route = ROUTE_END
     else:
         next_route = ROUTE_RESEARCHER if needs_more_research else ROUTE_WRITER
+
+    revision_directives = _build_revision_directives(review=review, next_route=next_route)
 
     trace = list(state.get("execution_trace", []))
     trace.append(
@@ -213,6 +249,22 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             "fact_issues": len(review.get("fact_issues", [])),
             "logic_issues": len(review.get("logic_issues", [])),
             "info_gaps": len(review.get("info_gaps", [])),
+            "route_reason": revision_directives.get("route_reason", ""),
+        }
+    )
+
+    history = list(state.get("iteration_history", []))
+    feedback_mapping = list(state.get("feedback_paragraph_mapping", []))
+    source_quality_summary = dict(state.get("source_quality_summary", {}) or {})
+    history.append(
+        {
+            "round": revision_step,
+            "draft": draft,
+            "review": review,
+            "next_route": next_route,
+            "is_satisfactory": is_satisfactory,
+            "feedback_paragraph_mapping": feedback_mapping,
+            "source_quality_summary": source_quality_summary,
         }
     )
 
@@ -223,8 +275,10 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         "next_route": next_route,
         "critique_feedback": review.get("critique_feedback", ""),
         "review_result": review,
+        "revision_directives": revision_directives,
         "errors": errors,
         "execution_trace": trace,
+        "iteration_history": history,
     }
     if is_satisfactory:
         result["final_report"] = draft
