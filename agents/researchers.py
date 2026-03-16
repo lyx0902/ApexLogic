@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
@@ -19,7 +20,7 @@ from prompts.system_prompts import (
     build_researcher_user_prompt,
 )
 from tools.arxiv_tool import arxiv_search
-from tools.search_tool import tavily_search
+from tools.search_tool import duckduckgo_search, tavily_search
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -125,6 +126,101 @@ def _normalize_context_item(item: Dict[str, Any] | str) -> Dict[str, Any]:
     }
 
 
+def _extract_core_summary(title: str, content: str) -> str:
+    """从长内容中提炼核心信息，避免简单首句截断。"""
+
+    text = (content or "").strip()
+    # 去除常见 Markdown/HTML 噪声，降低导航栏与页脚干扰。
+    text = re.sub(r"!\[[^]]*]\([^)]*\)", " ", text)
+    text = re.sub(r"\[[^]]+]\([^)]*\)", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\|", " ", text)
+    text = re.sub(r"\s+", " ", text)
+
+    noise_tokens = [
+        "首页",
+        "退出",
+        "充值",
+        "收藏夹",
+        "机构管理",
+        "切换用户",
+        "关注官方微信",
+        "关注官方微博",
+        "javascript:void",
+        "logo",
+    ]
+    for token in noise_tokens:
+        text = text.replace(token, " ")
+    text = re.sub(r"\s+", " ", text).strip()
+
+    if not text:
+        return ""
+
+    # 句子切分后按关键词密度与长度打分，选择更像“核心结论”的句子。
+    raw_sentences = [s.strip() for s in re.split(r"(?<=[。！？.!?;；])\s+", text) if s.strip()]
+    sentences: List[str] = []
+    for sent in raw_sentences:
+        if len(sent) > 220:
+            clauses = [c.strip() for c in re.split(r"[，,]\s*", sent) if c.strip()]
+            sentences.extend(clauses)
+        else:
+            sentences.append(sent)
+
+    noise_fragments = ["主办", "定价", "官方", "微博", "微信", "logo", "搜索", "收藏夹", "退出", "充值"]
+    sentences = [s for s in sentences if not any(token in s for token in noise_fragments)]
+    if not sentences:
+        return text[:280]
+
+    keywords = [
+        "propose",
+        "method",
+        "result",
+        "conclusion",
+        "benchmark",
+        "outperform",
+        "improve",
+        "evaluate",
+        "find",
+        "architecture",
+        "指令集",
+        "性能",
+        "功耗",
+        "兼容",
+        "差异",
+        "结论",
+        "实验",
+        "对比",
+    ]
+
+    def _signal_ratio(s: str) -> float:
+        signal_chars = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]", s)
+        return len(signal_chars) / max(len(s), 1)
+
+    scored: List[tuple[float, str]] = []
+    for s in sentences:
+        # 过滤版面符号密集、信息密度低的片段。
+        if _signal_ratio(s) < 0.55:
+            continue
+        lower = s.lower()
+        hit = sum(1 for k in keywords if k in lower)
+        # 过短句通常信息量不足，轻微惩罚。
+        length_bonus = min(len(s) / 80.0, 1.2)
+        score = hit * 1.6 + length_bonus
+        scored.append((score, s))
+
+    if not scored:
+        clean_sentences = [s for s in sentences if _signal_ratio(s) >= 0.45]
+        fallback = " ".join(clean_sentences[:2]).strip()
+        return fallback[:320] if fallback else text[:220]
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = [s for _, s in scored[:2]]
+    summary = " ".join(top).strip()
+    if len(summary) < 90 and len(sentences) > 2:
+        summary = (summary + " " + sentences[0]).strip()
+    return summary[:420]
+
+
 def _score_source_quality(item: Dict[str, Any]) -> Dict[str, Any]:
     """根据 source + domain 粗粒度评估来源质量。"""
 
@@ -137,7 +233,7 @@ def _score_source_quality(item: Dict[str, Any]) -> Dict[str, Any]:
     reason = "默认分层"
 
     # 论文与学术来源优先
-    if source == "arxiv" or "arxiv.org" in domain:
+    if source in {"arxiv", "openalex"} or "arxiv.org" in domain or "openalex.org" in domain:
         score = 0.95
         tier = "A"
         reason = "学术预印本"
@@ -151,8 +247,13 @@ def _score_source_quality(item: Dict[str, Any]) -> Dict[str, Any]:
         score = 0.82
         tier = "B"
         reason = "高可信行业媒体或机构"
+    # 结构化百科
+    elif source == "wikipedia" or "wikipedia.org" in domain:
+        score = 0.86
+        tier = "B"
+        reason = "结构化百科来源"
     # 聚合搜索结果的基础可信度
-    elif source == "tavily":
+    elif source in {"tavily", "duckduckgo"}:
         score = 0.72
         tier = "B"
         reason = "聚合检索结果，需二次核验"
@@ -193,6 +294,213 @@ def _build_quality_summary(contexts: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _topic_keywords(topic: str) -> List[str]:
+    """从主题中抽取轻量关键词，用于相关性过滤。"""
+
+    tokens = [t.strip().lower() for t in re.split(r"[^A-Za-z0-9\u4e00-\u9fff]+", topic) if t.strip()]
+    short_allowlist = {"c", "v", "ai", "ml", "isa", "cpu", "gpu"}
+    picked: List[str] = []
+    for token in tokens:
+        if len(token) >= 2 or re.search(r"[\u4e00-\u9fff]", token) or token in short_allowlist:
+            if token not in picked:
+                picked.append(token)
+    return picked[:14]
+
+
+def _text_signal_ratio(text: str) -> float:
+    """计算文本信号比（字母/数字/中文占比），过滤版面噪声。"""
+
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return 0.0
+    signal = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]", cleaned)
+    return round(len(signal) / max(len(cleaned), 1), 3)
+
+
+def _topic_relevance_score(topic_keywords: List[str], title: str, summary: str, content: str) -> float:
+    """基于关键词命中计算主题相关性（0-1）。"""
+
+    if not topic_keywords:
+        return 0.5
+
+    title_text = title.lower()
+    summary_text = summary.lower()
+    content_text = content[:1800].lower()
+
+    title_hits = sum(1 for kw in topic_keywords if kw in title_text)
+    summary_hits = sum(1 for kw in topic_keywords if kw in summary_text)
+    content_hits = sum(1 for kw in topic_keywords if kw in content_text)
+
+    base = max(min(len(topic_keywords), 6), 1)
+    weighted = (title_hits * 0.5 + summary_hits * 0.3 + content_hits * 0.2) / base
+    return round(min(weighted, 1.0), 3)
+
+
+def _filter_contexts_by_thresholds(
+    contexts: List[Dict[str, Any]],
+    topic: str,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """按阈值过滤来源，降低低质量/低相关噪声进入写作链路。"""
+
+    min_quality = float(os.getenv("MIN_SOURCE_QUALITY", "0.66"))
+    min_signal = float(os.getenv("MIN_SOURCE_SIGNAL", "0.52"))
+    min_relevance = float(os.getenv("MIN_SOURCE_RELEVANCE", "0.22"))
+    min_composite = float(os.getenv("MIN_SOURCE_COMPOSITE", "0.58"))
+    min_keep = int(os.getenv("MIN_CONTEXT_KEEP", "6"))
+    weight_quality = float(os.getenv("FILTER_WEIGHT_QUALITY", "0.55"))
+    weight_signal = float(os.getenv("FILTER_WEIGHT_SIGNAL", "0.15"))
+    weight_relevance = float(os.getenv("FILTER_WEIGHT_RELEVANCE", "0.30"))
+    required_sources = [
+        s.strip().lower()
+        for s in os.getenv("REQUIRED_SOURCE_DIVERSITY", "duckduckgo,arxiv,tavily").split(",")
+        if s.strip()
+    ]
+
+    total_weight = max(weight_quality + weight_signal + weight_relevance, 1e-6)
+    weight_quality /= total_weight
+    weight_signal /= total_weight
+    weight_relevance /= total_weight
+
+    keywords = _topic_keywords(topic)
+    kept: List[Dict[str, Any]] = []
+    dropped: List[Dict[str, Any]] = []
+
+    for item in contexts:
+        title = str(item.get("title", ""))
+        core_summary = str(item.get("core_summary", ""))
+        content = str(item.get("content", ""))
+        quality = float(item.get("quality_score", 0.0))
+        signal_ratio = _text_signal_ratio(core_summary or content)
+        relevance = _topic_relevance_score(keywords, title, core_summary, content)
+        composite = round(
+            quality * weight_quality + signal_ratio * weight_signal + relevance * weight_relevance,
+            3,
+        )
+
+        reasons: List[str] = []
+        if quality < min_quality:
+            reasons.append("low_quality")
+        if signal_ratio < min_signal:
+            reasons.append("low_signal")
+        if relevance < min_relevance:
+            reasons.append("low_relevance")
+        if composite < min_composite:
+            reasons.append("low_composite")
+
+        enriched = dict(item)
+        enriched["filter_scores"] = {
+            "quality": round(quality, 3),
+            "signal_ratio": signal_ratio,
+            "relevance": relevance,
+            "composite": composite,
+        }
+        enriched["filter_passed"] = not reasons
+        enriched["filter_reasons"] = reasons
+
+        if reasons:
+            dropped.append(enriched)
+        else:
+            kept.append(enriched)
+
+    # 多样性兜底：三类来源可用时至少保留各 1 条，避免单一来源主导。
+    if required_sources and dropped:
+        kept_sources = {str(item.get("source", "")).lower() for item in kept}
+        for source in required_sources:
+            if source in kept_sources:
+                continue
+            candidates = [
+                item
+                for item in dropped
+                if str(item.get("source", "")).lower() == source
+            ]
+            if not candidates:
+                continue
+            best = sorted(
+                candidates,
+                key=lambda x: float(x.get("filter_scores", {}).get("composite", 0.0)),
+                reverse=True,
+            )[0]
+            best["filter_passed"] = True
+            best["filter_reasons"] = ["rescued_for_source_diversity"]
+            kept.append(best)
+            dropped = [x for x in dropped if id(x) != id(best)]
+            kept_sources.add(source)
+
+    # 兜底：若阈值过严导致有效上下文太少，则按综合分回补。
+    if len(kept) < min_keep and dropped:
+        rescue = sorted(
+            dropped,
+            key=lambda x: (
+                float(x.get("filter_scores", {}).get("quality", 0.0)) * 0.55
+                + float(x.get("filter_scores", {}).get("signal_ratio", 0.0)) * 0.15
+                + float(x.get("filter_scores", {}).get("relevance", 0.0)) * 0.30
+            ),
+            reverse=True,
+        )
+        need = max(min_keep - len(kept), 0)
+        rescued = rescue[:need]
+        rescue_ids = {id(x) for x in rescued}
+        for item in rescued:
+            item["filter_passed"] = True
+            item["filter_reasons"] = ["rescued_for_min_context"]
+            kept.append(item)
+        dropped = [x for x in dropped if id(x) not in rescue_ids]
+
+    # 重新编号引用，保证连续。
+    for idx, item in enumerate(kept, start=1):
+        item["citation_id"] = f"S{idx}"
+
+    reason_counts: Dict[str, int] = {
+        "low_quality": 0,
+        "low_signal": 0,
+        "low_relevance": 0,
+        "low_composite": 0,
+        "rescued_for_source_diversity": 0,
+        "rescued_for_min_context": 0,
+    }
+    for item in kept:
+        for reason in item.get("filter_reasons", []):
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+    for item in dropped:
+        for reason in item.get("filter_reasons", []):
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    filter_summary = {
+        "thresholds": {
+            "min_quality": min_quality,
+            "min_signal": min_signal,
+            "min_relevance": min_relevance,
+            "min_composite": min_composite,
+            "min_keep": min_keep,
+        },
+        "weights": {
+            "quality": round(weight_quality, 3),
+            "signal": round(weight_signal, 3),
+            "relevance": round(weight_relevance, 3),
+        },
+        "kept": len(kept),
+        "dropped": len(dropped),
+        "kept_sources": sorted({str(item.get("source", "")) for item in kept}),
+        "dropped_sources": sorted({str(item.get("source", "")) for item in dropped}),
+        "reason_counts": reason_counts,
+        "avg_scores": {
+            "quality": round(sum(float(x.get("filter_scores", {}).get("quality", 0.0)) for x in kept) / max(len(kept), 1), 3),
+            "signal": round(sum(float(x.get("filter_scores", {}).get("signal_ratio", 0.0)) for x in kept) / max(len(kept), 1), 3),
+            "relevance": round(sum(float(x.get("filter_scores", {}).get("relevance", 0.0)) for x in kept) / max(len(kept), 1), 3),
+            "composite": round(sum(float(x.get("filter_scores", {}).get("composite", 0.0)) for x in kept) / max(len(kept), 1), 3),
+        },
+        "dropped_samples": [
+            {
+                "title": str(item.get("title", ""))[:120],
+                "source": item.get("source", ""),
+                "reasons": item.get("filter_reasons", []),
+            }
+            for item in dropped[:5]
+        ],
+    }
+    return kept, filter_summary
+
+
 def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dict[str, Any]]:
     """按 url 或 title+source 去重，并生成连续 citation_id。"""
 
@@ -207,7 +515,12 @@ def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dic
         if key in seen:
             continue
         seen.add(key)
-        unique.append(_score_source_quality(item))
+        rated = _score_source_quality(item)
+        rated["core_summary"] = _extract_core_summary(
+            title=str(rated.get("title", "")),
+            content=str(rated.get("content", "")),
+        )
+        unique.append(rated)
 
     for idx, item in enumerate(unique, start=1):
         item["citation_id"] = f"S{idx}"
@@ -241,18 +554,26 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     contexts: List[Dict[str, Any] | str] = list(state.get("retrieved_context", []))
 
-    for query in queries[:4]:
-        try:
-            contexts.extend(tavily_search(query, max_results=2))
-        except Exception as exc:
-            errors = _append_error(errors, f"Tavily 检索失败: {exc}")
+    ddg_top_k = int(os.getenv("DDG_RESULTS_PER_QUERY", "10"))
+    arxiv_top_k = int(os.getenv("ARXIV_RESULTS_PER_QUERY", "5"))
+    tavily_top_k = int(os.getenv("TAVILY_RESULTS_PER_QUERY", "3"))
+    query_budget = int(os.getenv("SEARCH_QUERY_BUDGET", "3"))
 
-    # 使用 ArXiv 作为学术补充来源，降低信息偏差。
-    for query in queries[:2]:
+    for query in queries[:query_budget]:
         try:
-            contexts.extend(arxiv_search(query, max_results=2))
+            contexts.extend(duckduckgo_search(query, max_results=ddg_top_k))
+        except Exception as exc:
+            errors = _append_error(errors, f"DDG 检索失败: {exc}")
+
+        try:
+            contexts.extend(arxiv_search(query, max_results=arxiv_top_k))
         except Exception as exc:
             errors = _append_error(errors, f"ArXiv 检索失败: {exc}")
+
+        try:
+            contexts.extend(tavily_search(query, max_results=tavily_top_k))
+        except Exception as exc:
+            errors = _append_error(errors, f"Tavily 检索失败: {exc}")
 
     # 确保在无外部依赖时流程仍然有上下文可用
     if not contexts:
@@ -266,14 +587,17 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         )
 
     normalized_contexts = _dedupe_and_index_contexts(contexts)
-    source_quality_summary = _build_quality_summary(normalized_contexts)
+    filtered_contexts, filter_summary = _filter_contexts_by_thresholds(normalized_contexts, topic)
+    source_quality_summary = _build_quality_summary(filtered_contexts)
+    source_quality_summary["filter_summary"] = filter_summary
     trace = list(state.get("execution_trace", []))
     trace.append(
         {
             "node": "researcher",
             "revision_step": state.get("revision_step", 0),
             "queries": len(queries),
-            "contexts": len(normalized_contexts),
+            "contexts": len(filtered_contexts),
+            "dropped": filter_summary.get("dropped", 0),
             "quality_avg": source_quality_summary.get("avg_score", 0.0),
             "errors": len(errors),
         }
@@ -281,7 +605,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     return {
         "search_queries": queries,
-        "retrieved_context": normalized_contexts,
+        "retrieved_context": filtered_contexts,
         "source_quality_summary": source_quality_summary,
         "errors": errors,
         "execution_trace": trace,

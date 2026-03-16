@@ -20,12 +20,14 @@ def _format_trace_item(item: dict[str, Any]) -> str:
         return (
             f"node={node} rev={revision} queries={item.get('queries', 0)} "
             f"contexts={item.get('contexts', 0)} quality_avg={item.get('quality_avg', 0.0)} "
+            f"dropped={item.get('dropped', 0)} "
             f"errors={item.get('errors', 0)}"
         )
     if node == "writer":
         return (
             f"node={node} rev={revision} mode={mode} "
-            f"draft_len={item.get('draft_len', 0)} trimmed={item.get('trimmed', False)} "
+            f"draft_len={item.get('draft_len', 0)} planned={item.get('planned_sections', 0)} "
+            f"complete={item.get('complete', False)} "
             f"mapped={item.get('mapped_items', 0)}"
         )
     if node == "reviewer":
@@ -33,7 +35,8 @@ def _format_trace_item(item: dict[str, Any]) -> str:
             f"node={node} rev={revision} mode={mode} "
             f"next={item.get('next_route', '')} "
             f"ok={item.get('is_satisfactory', False)} "
-            f"conf={item.get('confidence', 0.0)}"
+            f"conf={item.get('confidence', 0.0)} "
+            f"controversies={item.get('controversies', 0)}"
         )
     return str(item)
 

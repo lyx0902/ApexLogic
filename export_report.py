@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -80,8 +81,48 @@ def _render_markdown_debug(state: ResearchState) -> str:
     errors = state.get("errors", []) or []
     history = state.get("iteration_history", []) or []
     quality_summary = state.get("source_quality_summary", {}) or {}
+    filter_summary = quality_summary.get("filter_summary", {}) or {}
+    length_meta = state.get("length_control_meta", {}) or {}
 
     lines: List[str] = []
+
+    def summarize_core_content(text: str) -> str:
+        """从上下文正文提炼核心句，避免固定前缀截取。"""
+
+        normalized = re.sub(r"\s+", " ", (text or "").strip())
+        if not normalized:
+            return ""
+        sentences = [s.strip() for s in re.split(r"(?<=[。！？.!?])\s+", normalized) if s.strip()]
+        if not sentences:
+            return normalized[:260]
+
+        keywords = [
+            "benchmark",
+            "result",
+            "conclusion",
+            "method",
+            "architecture",
+            "performance",
+            "latency",
+            "power",
+            "security",
+            "差异",
+            "性能",
+            "结论",
+            "对比",
+            "实验",
+            "优势",
+            "局限",
+        ]
+        scored: List[tuple[float, str]] = []
+        for s in sentences:
+            lower = s.lower()
+            hit = sum(1 for k in keywords if k in lower)
+            score = hit * 1.6 + min(len(s) / 90.0, 1.2)
+            scored.append((score, s))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        selected = " ".join([s for _, s in scored[:2]]).strip()
+        return selected[:320] if selected else normalized[:260]
     lines.append(f"# 深度研究报告：{topic}")
     lines.append("")
     lines.append("## 1. 运行元信息")
@@ -93,8 +134,16 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append(f"- 评审置信度: {review.get('confidence', 'N/A')}")
     lines.append(f"- 报告篇幅: {state.get('report_length', 'medium')}")
     lines.append(f"- 输出模式: {state.get('output_mode', 'debug')}")
+    lines.append(f"- 长度控制策略: {length_meta.get('strategy', 'unknown')}")
+    lines.append(f"- 完整性检查: {length_meta.get('completeness', {}).get('is_complete', 'N/A')}")
     lines.append(f"- 来源质量均分: {quality_summary.get('avg_score', 'N/A')}")
     lines.append(f"- 来源质量分层: {quality_summary.get('tier_counts', {})}")
+    if filter_summary:
+        lines.append(f"- 过滤阈值: {filter_summary.get('thresholds', {})}")
+        lines.append(f"- 过滤权重: {filter_summary.get('weights', {})}")
+        lines.append(f"- 过滤结果: kept={filter_summary.get('kept', 0)}, dropped={filter_summary.get('dropped', 0)}")
+        lines.append(f"- 过滤均值: {filter_summary.get('avg_scores', {})}")
+        lines.append(f"- 过滤原因统计: {filter_summary.get('reason_counts', {})}")
     lines.append("")
 
     lines.append("## 2. 研究正文")
@@ -130,6 +179,49 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
+    lines.append("### 3.4 内部辩论与证据裁决")
+    supporter = review.get("supporter", {}) or {}
+    skeptic = review.get("skeptic", {}) or {}
+    judge = review.get("judge", {}) or {}
+    lines.append("- 支持者观点:")
+    strengths = supporter.get("strengths", []) or []
+    if strengths:
+        lines.extend([f"  - {item}" for item in strengths])
+    else:
+        lines.append("  - 无")
+    lines.append("- 质疑者观点:")
+    critical = skeptic.get("critical_issues", []) or []
+    if critical:
+        lines.extend([f"  - {item}" for item in critical])
+    else:
+        lines.append("  - 无")
+    lines.append(f"- 裁判结论: {judge.get('decision', '')}")
+    lines.append(f"- 裁判依据: {judge.get('rationale', '')}")
+    lines.append("- 争议点:")
+    controversy_points = review.get("controversy_points", []) or []
+    if controversy_points:
+        lines.extend([f"  - {item}" for item in controversy_points])
+    else:
+        lines.append("  - 无")
+    lines.append("- 证据裁决:")
+    verdicts = review.get("evidence_verdicts", []) or []
+    if verdicts:
+        for item in verdicts:
+            if isinstance(item, dict):
+                lines.append(
+                    "  - claim: {claim} | status: {status} | action: {action}".format(
+                        claim=item.get("claim", ""),
+                        status=item.get("status", ""),
+                        action=item.get("action", ""),
+                    )
+                )
+                lines.append(f"    - evidence: {item.get('evidence', '')}")
+            else:
+                lines.append(f"  - {item}")
+    else:
+        lines.append("  - 无")
+    lines.append("")
+
     lines.append("## 4. 每轮草稿与评审历史")
     lines.append("")
     for item in history:
@@ -162,6 +254,27 @@ def _render_markdown_debug(state: ResearchState) -> str:
         else:
             lines.append("  - 无")
         lines.append("")
+
+        review_item = item.get("review", {}) or {}
+        verdicts = review_item.get("evidence_verdicts", []) or []
+        lines.append("- 本轮争议点与裁决:")
+        controversies = review_item.get("controversy_points", []) or []
+        if controversies:
+            for cp in controversies:
+                lines.append(f"  - 争议: {cp}")
+        else:
+            lines.append("  - 争议: 无")
+        if verdicts:
+            for vd in verdicts:
+                if isinstance(vd, dict):
+                    lines.append(
+                        f"  - 裁决: {vd.get('claim', '')} -> {vd.get('status', '')} | action={vd.get('action', '')}"
+                    )
+                else:
+                    lines.append(f"  - 裁决: {vd}")
+        else:
+            lines.append("  - 裁决: 无")
+        lines.append("")
     if not history:
         lines.append("- 无")
     lines.append("")
@@ -174,16 +287,38 @@ def _render_markdown_debug(state: ResearchState) -> str:
             title = item.get("title", "")
             url = item.get("url", "")
             source = item.get("source", "")
-            content = str(item.get("content", ""))[:220].replace("\n", " ")
+            core_summary = str(item.get("core_summary", "")).strip()
+            raw_content = str(item.get("content", ""))
+            content = core_summary if core_summary else summarize_core_content(raw_content)
+            content = content.replace("\n", " ")
             lines.append(f"- [{citation_id}] {title} ({source})")
             if url:
                 lines.append(f"  - url: {url}")
-            lines.append(f"  - 摘要: {content}")
+            lines.append(f"  - 核心提炼: {content}")
+            scores = item.get("filter_scores", {}) if isinstance(item, dict) else {}
+            if scores:
+                lines.append(
+                    f"  - 过滤评分: quality={scores.get('quality', 'N/A')}, "
+                    f"signal={scores.get('signal_ratio', 'N/A')}, relevance={scores.get('relevance', 'N/A')}, "
+                    f"composite={scores.get('composite', 'N/A')}"
+                )
         else:
             lines.append(f"- {str(item)[:260]}")
     if not contexts:
         lines.append("- 无")
     lines.append("")
+
+    if filter_summary:
+        lines.append("### 5.1 被过滤样本（最多5条）")
+        dropped_samples = filter_summary.get("dropped_samples", []) or []
+        if dropped_samples:
+            for item in dropped_samples:
+                lines.append(
+                    f"- {item.get('title', '')} ({item.get('source', '')}) -> {item.get('reasons', [])}"
+                )
+        else:
+            lines.append("- 无")
+        lines.append("")
 
     lines.append("## 6. 执行轨迹")
     lines.append("")

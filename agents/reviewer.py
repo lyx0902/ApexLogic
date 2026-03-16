@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 from typing import Any, Dict, List
 
 try:
@@ -74,6 +76,94 @@ def _extract_json_content(raw: str) -> str:
     return cleaned
 
 
+def _extract_first_json_object(raw: str) -> str:
+    """从混杂文本中提取首个 JSON 对象字符串。"""
+
+    text = raw.strip()
+    start = text.find("{")
+    if start < 0:
+        return text
+
+    depth = 0
+    in_str = False
+    escaped = False
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start: idx + 1]
+    return text[start:]
+
+
+def _sanitize_json_text(text: str) -> str:
+    """轻量修复常见 JSON 格式问题（尾逗号、BOM）。"""
+
+    cleaned = text.strip().lstrip("\ufeff")
+    cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
+    return cleaned
+
+
+def _parse_review_json(raw: str) -> Dict[str, Any]:
+    """解析 Reviewer 输出 JSON，兼容常见格式噪声。"""
+
+    candidates = [
+        _sanitize_json_text(_extract_json_content(raw)),
+        _sanitize_json_text(_extract_first_json_object(raw)),
+        _sanitize_json_text(_extract_first_json_object(_extract_json_content(raw))),
+    ]
+
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            parsed = json.loads(cand)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+    # 最后尝试解析 Python 风格字典，兼容模型偶发单引号输出。
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            parsed = ast.literal_eval(cand)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+    raise ValueError("Reviewer 输出无法解析为结构化 JSON")
+
+
+def _to_dict_list(value: Any) -> List[Dict[str, Any]]:
+    """将 LLM 返回的对象列表统一为字典列表。"""
+
+    if not isinstance(value, list):
+        return []
+    result: List[Dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            result.append({str(k): item[k] for k in item})
+        elif isinstance(item, str) and item.strip():
+            result.append({"point": item.strip()})
+    return result
+
+
 def _rule_based_review(
     draft: str,
     retrieved_context: List[Dict[str, Any] | str],
@@ -90,6 +180,27 @@ def _rule_based_review(
             ),
             "confidence": 0.65,
             "review_mode": "rule",
+            "supporter": {
+                "strengths": ["主题聚焦明确"],
+                "supported_claims": [],
+            },
+            "skeptic": {
+                "critical_issues": ["证据来源数量不足，无法支撑关键结论"],
+                "missing_evidence": ["需要补充多来源检索结果"],
+            },
+            "judge": {
+                "decision": "需补充检索",
+                "rationale": "当前上下文数量不足，无法完成高置信审查。",
+            },
+            "controversy_points": ["当前结论是否建立在足够证据之上"],
+            "evidence_verdicts": [
+                {
+                    "claim": "已有证据可支撑完整报告",
+                    "status": "unsupported",
+                    "evidence": "上下文数量低于最低阈值",
+                    "action": "返回 Researcher 补充检索",
+                }
+            ],
             "fact_issues": [],
             "logic_issues": [],
             "info_gaps": ["证据来源数量不足", "观点覆盖不足"],
@@ -106,6 +217,27 @@ def _rule_based_review(
             ),
             "confidence": 0.72,
             "review_mode": "rule",
+            "supporter": {
+                "strengths": ["已有基础结构与主题相关性"],
+                "supported_claims": ["草稿具备初步结论框架"],
+            },
+            "skeptic": {
+                "critical_issues": ["论证展开深度不足"],
+                "missing_evidence": ["关键论据缺乏细节展开"],
+            },
+            "judge": {
+                "decision": "需重写报告",
+                "rationale": "信息量不足但不必重新检索，优先改写论证。",
+            },
+            "controversy_points": ["现有文本能否支撑可执行建议"],
+            "evidence_verdicts": [
+                {
+                    "claim": "结论可执行性充分",
+                    "status": "weak",
+                    "evidence": "缺少实施步骤与风险边界",
+                    "action": "返回 Writer 扩写方法与建议",
+                }
+            ],
             "fact_issues": [],
             "logic_issues": ["论证展开不足", "结论可执行性不够明确"],
             "info_gaps": [],
@@ -117,6 +249,27 @@ def _rule_based_review(
         "critique_feedback": "草稿通过当前评审，可结束流程。",
         "confidence": 0.8,
         "review_mode": "rule",
+        "supporter": {
+            "strengths": ["证据与结论匹配度可接受", "结构完整"],
+            "supported_claims": ["可进入交付阶段"],
+        },
+        "skeptic": {
+            "critical_issues": [],
+            "missing_evidence": [],
+        },
+        "judge": {
+            "decision": "通过",
+            "rationale": "关键审查项达到当前阈值。",
+        },
+        "controversy_points": [],
+        "evidence_verdicts": [
+            {
+                "claim": "报告达到可交付标准",
+                "status": "supported",
+                "evidence": "规则评审通过，未发现关键缺口",
+                "action": "结束流程",
+            }
+        ],
         "fact_issues": [],
         "logic_issues": [],
         "info_gaps": [],
@@ -129,6 +282,8 @@ def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[
     fact_issues = _to_issue_list(review.get("fact_issues", []))
     logic_issues = _to_issue_list(review.get("logic_issues", []))
     info_gaps = _to_issue_list(review.get("info_gaps", []))
+    controversy_points = _to_issue_list(review.get("controversy_points", []))
+    evidence_verdicts = _to_dict_list(review.get("evidence_verdicts", []))
 
     if next_route == ROUTE_RESEARCHER:
         route_reason = "当前证据不足，优先补齐检索材料后再写作。"
@@ -138,6 +293,14 @@ def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[
         route_reason = "证据基本可用，但草稿存在事实或逻辑问题，需定向改写。"
         focus_areas = ["修复事实引用", "补全论证链", "提升结论可执行性"]
         must_fix = fact_issues + logic_issues
+        if not must_fix and controversy_points:
+            must_fix = controversy_points
+        if not must_fix and evidence_verdicts:
+            must_fix = [
+                str(item.get("action", "修复争议点"))
+                for item in evidence_verdicts[:4]
+                if str(item.get("action", "")).strip()
+            ]
         if not must_fix:
             must_fix = ["逐条响应 critique_feedback 并修订对应段落"]
     else:
@@ -153,6 +316,8 @@ def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[
         "fact_issues": fact_issues,
         "logic_issues": logic_issues,
         "info_gaps": info_gaps,
+        "controversy_points": controversy_points,
+        "evidence_verdicts": evidence_verdicts,
     }
 
 
@@ -183,17 +348,46 @@ def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
         ]
     )
 
-    content = _extract_json_content(getattr(response, "content", "") or "")
-    parsed = json.loads(content)
+    content = getattr(response, "content", "") or ""
+    parsed = _parse_review_json(content)
+    parsed_dict = parsed if isinstance(parsed, dict) else {}
+    supporter = parsed_dict.get("supporter", {})
+    skeptic = parsed_dict.get("skeptic", {})
+    judge = parsed_dict.get("judge", {})
+
+    controversy_points = _to_issue_list(judge.get("controversy_points", parsed_dict.get("controversy_points", [])))
+    evidence_verdicts = _to_dict_list(judge.get("evidence_verdicts", parsed_dict.get("evidence_verdicts", [])))
+    fact_issues = _to_issue_list(judge.get("fact_issues", parsed_dict.get("fact_issues", [])))
+    logic_issues = _to_issue_list(judge.get("logic_issues", parsed_dict.get("logic_issues", [])))
+    info_gaps = _to_issue_list(judge.get("info_gaps", parsed_dict.get("info_gaps", [])))
+
+    # 兼容模型未按三层返回时，回退到顶层字段。
+    if not judge and parsed_dict:
+        judge = parsed
+
     return {
-        "is_satisfactory": bool(parsed.get("is_satisfactory", False)),
-        "needs_more_research": bool(parsed.get("needs_more_research", False)),
-        "critique_feedback": str(parsed.get("critique_feedback", "请给出更具体的修订建议。")),
-        "confidence": float(parsed.get("confidence", 0.5)),
+        "is_satisfactory": bool(judge.get("is_satisfactory", parsed_dict.get("is_satisfactory", False))),
+        "needs_more_research": bool(judge.get("needs_more_research", parsed_dict.get("needs_more_research", False))),
+        "critique_feedback": str(judge.get("critique_feedback", parsed_dict.get("critique_feedback", "请给出更具体的修订建议。"))),
+        "confidence": float(judge.get("confidence", parsed_dict.get("confidence", 0.5))),
         "review_mode": "llm",
-        "fact_issues": _to_issue_list(parsed.get("fact_issues", [])),
-        "logic_issues": _to_issue_list(parsed.get("logic_issues", [])),
-        "info_gaps": _to_issue_list(parsed.get("info_gaps", [])),
+        "supporter": {
+            "strengths": _to_issue_list(supporter.get("strengths", []) if isinstance(supporter, dict) else []),
+            "supported_claims": _to_issue_list(supporter.get("supported_claims", []) if isinstance(supporter, dict) else []),
+        },
+        "skeptic": {
+            "critical_issues": _to_issue_list(skeptic.get("critical_issues", []) if isinstance(skeptic, dict) else []),
+            "missing_evidence": _to_issue_list(skeptic.get("missing_evidence", []) if isinstance(skeptic, dict) else []),
+        },
+        "judge": {
+            "decision": str(judge.get("decision", "")) if isinstance(judge, dict) else "",
+            "rationale": str(judge.get("rationale", "")) if isinstance(judge, dict) else "",
+        },
+        "controversy_points": controversy_points,
+        "evidence_verdicts": evidence_verdicts,
+        "fact_issues": fact_issues,
+        "logic_issues": logic_issues,
+        "info_gaps": info_gaps,
     }
 
 
@@ -249,6 +443,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             "fact_issues": len(review.get("fact_issues", [])),
             "logic_issues": len(review.get("logic_issues", [])),
             "info_gaps": len(review.get("info_gaps", [])),
+            "controversies": len(review.get("controversy_points", [])),
             "route_reason": revision_directives.get("route_reason", ""),
         }
     )

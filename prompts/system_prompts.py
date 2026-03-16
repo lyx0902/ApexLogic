@@ -118,6 +118,12 @@ def build_writer_user_prompt(
         f"路由原因: {route_reason or '无'}"
     )
 
+    planning_rules = (
+        "写作流程要求: 先给出提纲并为每个二级标题分配字数预算，再按预算逐段写作；"
+        "若超出预算请优先压缩冗余段落，若不足预算请补充证据解释与方法细节；"
+        "禁止仅在文末做生硬截断。"
+    )
+
     return (
         f"研究主题: {topic}\n"
         f"当前迭代轮次: {revision_step}\n"
@@ -126,6 +132,7 @@ def build_writer_user_prompt(
         f"评审反馈: {critique_feedback or '无'}\n\n"
         f"结构化修订指令:\n{directive_text}\n\n"
         f"检索上下文:\n{context_snippet}\n\n"
+        f"{planning_rules}\n"
         "请输出包含: 摘要、背景、关键发现、风险与局限、结论与建议。"
         "若为迭代修订，必须逐条响应评审反馈并修复 must_fix 项。"
     )
@@ -141,17 +148,21 @@ def build_reviewer_rule_hint() -> str:
 
 
 def build_reviewer_user_prompt(topic: str, draft: str, context_count: int) -> str:
-    """构建 Reviewer 的结构化 JSON 评审提示。"""
+    """构建 Reviewer 的结构化 JSON 评审提示（内部辩论模式）。"""
 
     return (
         f"研究主题: {topic}\n"
         f"参考上下文数量: {context_count}\n"
         f"草稿内容:\n{draft[:6000]}\n\n"
-        "请仅输出 JSON，字段必须包含: "
-        "is_satisfactory(boolean), needs_more_research(boolean), "
+        "请以内部辩论方式审查，并仅输出 JSON。"
+        "禁止输出 markdown、代码块围栏、注释和额外解释性文本。"
+        "顶层字段必须包含: supporter, skeptic, judge。"
+        "其中 supporter 需包含 strengths(array) 与 supported_claims(array)；"
+        "skeptic 需包含 critical_issues(array) 与 missing_evidence(array)；"
+        "judge 需包含: is_satisfactory(boolean), needs_more_research(boolean), "
         "critique_feedback(string), confidence(number 0-1), "
-        "fact_issues(array of string), logic_issues(array of string), "
-        "info_gaps(array of string)。"
+        "fact_issues(array), logic_issues(array), info_gaps(array), "
+        "controversy_points(array), evidence_verdicts(array of object{claim,status,evidence,action})。"
     )
 
 

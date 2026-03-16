@@ -41,6 +41,8 @@ class ResearchState(ResearchStateCore, total=False):
     iteration_history: List[Dict[str, Any]]
     # Writer 对评审项的修订映射（must_fix -> 段落/章节）
     feedback_paragraph_mapping: List[Dict[str, Any]]
+    # Writer 规划式长度控制元数据（提纲预算、完整性检查等）
+    length_control_meta: Dict[str, Any]
     # Researcher 生成的来源质量统计摘要
     source_quality_summary: Dict[str, Any]
     # 报告篇幅控制：short / medium / long
@@ -72,6 +74,7 @@ def create_initial_state(
         "execution_trace": [],
         "iteration_history": [],
         "feedback_paragraph_mapping": [],
+        "length_control_meta": {},
         "source_quality_summary": {},
         "report_length": report_length,
         "output_mode": output_mode,
