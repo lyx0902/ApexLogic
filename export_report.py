@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from dotenv import load_dotenv
 
@@ -34,16 +33,13 @@ def parse_args() -> argparse.Namespace:
         help="输出 markdown 文件路径（可选）",
     )
     parser.add_argument(
-        "--report-length",
-        choices=["short", "medium", "long"],
-        default="medium",
-        help="报告篇幅控制",
-    )
-    parser.add_argument(
         "--output-mode",
-        choices=["user", "debug"],
-        default="debug",
-        help="导出模式：user 仅最终报告；debug 包含轨迹、评审与错误信息",
+        choices=["user", "debug", "both", "user_only"],
+        default="both",
+        help=(
+            "导出模式：user=仅用户版，debug=仅调试版，"
+            "both=单次运行同时导出两版，user_only=运行完整流程但仅导出用户版"
+        ),
     )
     return parser.parse_args()
 
@@ -66,7 +62,24 @@ def _render_markdown_user(state: ResearchState) -> str:
 
     topic = state.get("topic", "")
     report = state.get("final_report", "") or state.get("draft", "") or ""
+    contexts = state.get("retrieved_context", []) or []
     lines: List[str] = [f"# 深度研究报告：{topic}", "", report if report else "(未生成正文)"]
+
+    lines.append("")
+    lines.append("## 参考文献")
+    lines.append("")
+    for item in contexts[:12]:
+        if not isinstance(item, dict):
+            continue
+        citation_id = item.get("citation_id", "-")
+        title = item.get("title", "")
+        source = item.get("source", "")
+        url = item.get("url", "")
+        lines.append(f"- [{citation_id}] {title} ({source})")
+        if url:
+            lines.append(f"  - {url}")
+    if not any(isinstance(x, dict) for x in contexts[:12]):
+        lines.append("- 无")
     return "\n".join(lines)
 
 
@@ -82,47 +95,9 @@ def _render_markdown_debug(state: ResearchState) -> str:
     history = state.get("iteration_history", []) or []
     quality_summary = state.get("source_quality_summary", {}) or {}
     filter_summary = quality_summary.get("filter_summary", {}) or {}
-    length_meta = state.get("length_control_meta", {}) or {}
 
     lines: List[str] = []
 
-    def summarize_core_content(text: str) -> str:
-        """从上下文正文提炼核心句，避免固定前缀截取。"""
-
-        normalized = re.sub(r"\s+", " ", (text or "").strip())
-        if not normalized:
-            return ""
-        sentences = [s.strip() for s in re.split(r"(?<=[。！？.!?])\s+", normalized) if s.strip()]
-        if not sentences:
-            return normalized[:260]
-
-        keywords = [
-            "benchmark",
-            "result",
-            "conclusion",
-            "method",
-            "architecture",
-            "performance",
-            "latency",
-            "power",
-            "security",
-            "差异",
-            "性能",
-            "结论",
-            "对比",
-            "实验",
-            "优势",
-            "局限",
-        ]
-        scored: List[tuple[float, str]] = []
-        for s in sentences:
-            lower = s.lower()
-            hit = sum(1 for k in keywords if k in lower)
-            score = hit * 1.6 + min(len(s) / 90.0, 1.2)
-            scored.append((score, s))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        selected = " ".join([s for _, s in scored[:2]]).strip()
-        return selected[:320] if selected else normalized[:260]
     lines.append(f"# 深度研究报告：{topic}")
     lines.append("")
     lines.append("## 1. 运行元信息")
@@ -132,10 +107,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append(f"- 下一路由建议: {state.get('next_route', '')}")
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
     lines.append(f"- 评审置信度: {review.get('confidence', 'N/A')}")
-    lines.append(f"- 报告篇幅: {state.get('report_length', 'medium')}")
     lines.append(f"- 输出模式: {state.get('output_mode', 'debug')}")
-    lines.append(f"- 长度控制策略: {length_meta.get('strategy', 'unknown')}")
-    lines.append(f"- 完整性检查: {length_meta.get('completeness', {}).get('is_complete', 'N/A')}")
     lines.append(f"- 来源质量均分: {quality_summary.get('avg_score', 'N/A')}")
     lines.append(f"- 来源质量分层: {quality_summary.get('tier_counts', {})}")
     if filter_summary:
@@ -231,7 +203,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 草稿片段:")
         draft_text = str(item.get("draft", "")).strip()
         lines.append("")
-        lines.append((draft_text[:2000] + "...") if len(draft_text) > 2000 else (draft_text or "(空)"))
+        lines.append((draft_text[:800] + "...") if len(draft_text) > 800 else (draft_text or "(空)"))
         lines.append("")
 
         review_item = item.get("review", {}) or {}
@@ -287,14 +259,9 @@ def _render_markdown_debug(state: ResearchState) -> str:
             title = item.get("title", "")
             url = item.get("url", "")
             source = item.get("source", "")
-            core_summary = str(item.get("core_summary", "")).strip()
-            raw_content = str(item.get("content", ""))
-            content = core_summary if core_summary else summarize_core_content(raw_content)
-            content = content.replace("\n", " ")
             lines.append(f"- [{citation_id}] {title} ({source})")
             if url:
                 lines.append(f"  - url: {url}")
-            lines.append(f"  - 核心提炼: {content}")
             scores = item.get("filter_scores", {}) if isinstance(item, dict) else {}
             if scores:
                 lines.append(
@@ -338,22 +305,53 @@ def _render_markdown_debug(state: ResearchState) -> str:
     return "\n".join(lines)
 
 
-def _render_markdown(state: ResearchState) -> str:
-    """根据 output_mode 自动选择渲染模板。"""
+def _build_output_paths(output: str | None, topic: str, mode: str) -> List[Path]:
+    """根据导出模式生成输出路径列表。"""
 
-    if state.get("output_mode", "debug") == "user":
-        return _render_markdown_user(state)
-    return _render_markdown_debug(state)
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    if output:
+        base_path = Path(output)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        base_path = reports_dir / f"{timestamp}-{_safe_filename(topic)}.md"
+
+    stem = base_path.stem
+    suffix = base_path.suffix or ".md"
+    parent = base_path.parent
+
+    if mode == "both":
+        return [
+            parent / f"{stem}-user{suffix}",
+            parent / f"{stem}-debug{suffix}",
+        ]
+    return [base_path]
+
+
+def _render_by_mode(state: ResearchState, mode: str) -> Dict[str, str]:
+    """返回需要写出的报告内容映射。"""
+
+    user_md = _render_markdown_user(state)
+    debug_md = _render_markdown_debug(state)
+
+    if mode == "user":
+        return {"user": user_md}
+    if mode == "debug":
+        return {"debug": debug_md}
+    if mode == "user_only":
+        # 实际仍跑完整链路，仅隐藏 debug 输出文件。
+        return {"user": user_md}
+    return {"user": user_md, "debug": debug_md}
 
 
 def run_and_export(
     topic: str,
     max_revisions: int | None,
     output: str | None,
-    report_length: str,
     output_mode: str,
-) -> str:
-    """执行图并导出 markdown 报告，返回输出路径。"""
+) -> List[str]:
+    """执行图并导出 markdown 报告，返回输出路径列表。"""
 
     env_loaded = load_dotenv()
     if not env_loaded:
@@ -364,34 +362,41 @@ def run_and_export(
         actual_max_revisions = int(os.getenv("MAX_REVISIONS", "3"))
 
     app = compile_graph(max_revisions=actual_max_revisions)
+    normalized_mode = output_mode if output_mode in {"user", "debug", "both", "user_only"} else "both"
+
     initial_state = create_initial_state(
         topic=topic,
-        report_length=report_length if report_length in {"short", "medium", "long"} else "medium",
-        output_mode=output_mode if output_mode in {"user", "debug"} else "debug",
+        # 运行时统一按 debug 状态记录，导出层再决定展示与落盘。
+        output_mode="debug",
     )
     state: ResearchState = app.invoke(initial_state)
 
-    reports_dir = Path("reports")
-    reports_dir.mkdir(parents=True, exist_ok=True)
+    outputs = _render_by_mode(state, normalized_mode)
+    paths = _build_output_paths(output=output, topic=topic, mode=normalized_mode)
 
-    if output:
-        output_path = Path(output)
+    saved_paths: List[str] = []
+    if normalized_mode == "both":
+        user_path, debug_path = paths
+        user_path.write_text(outputs["user"], encoding="utf-8")
+        debug_path.write_text(outputs["debug"], encoding="utf-8")
+        saved_paths.extend([str(user_path), str(debug_path)])
     else:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        output_path = reports_dir / f"{timestamp}-{_safe_filename(topic)}.md"
+        path = paths[0]
+        key = "debug" if normalized_mode == "debug" else "user"
+        path.write_text(outputs[key], encoding="utf-8")
+        saved_paths.append(str(path))
 
-    output_path.write_text(_render_markdown(state), encoding="utf-8")
-    return str(output_path)
+    return saved_paths
 
 
 if __name__ == "__main__":
     args = parse_args()
-    path = run_and_export(
+    paths = run_and_export(
         topic=args.topic,
         max_revisions=args.max_revisions,
         output=args.output,
-        report_length=args.report_length,
         output_mode=args.output_mode,
     )
-    print(f"[EXPORT] report saved: {path}")
+    for path in paths:
+        print(f"[EXPORT] report saved: {path}")
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List
 
 
 RESEARCHER_SYSTEM_PROMPT = """
@@ -73,7 +73,6 @@ def build_writer_user_prompt(
     revision_step: int,
     critique_feedback: str,
     retrieved_context: List[Dict[str, Any] | str],
-    report_length: Literal["short", "medium", "long"] = "medium",
     revision_directives: Dict[str, Any] | None = None,
 ) -> str:
     """构建 Writer 生成/修订草稿提示。"""
@@ -94,19 +93,6 @@ def build_writer_user_prompt(
 
     context_snippet = "\n".join(chunks)
 
-    length_hint_map = {
-        "short": "短篇（约 800-1200 字）：聚焦核心结论与关键证据。",
-        "medium": "中篇（约 1800-2600 字）：覆盖完整分析链路与可执行建议。",
-        "long": "长篇（约 3200-4500 字）：提供更细粒度对比、方法说明与风险边界。",
-    }
-    selected_length_hint = length_hint_map.get(report_length, length_hint_map["medium"])
-    length_bound_map = {
-        "short": "硬约束: 800-1200 字",
-        "medium": "硬约束: 1800-2600 字",
-        "long": "硬约束: 3200-4500 字",
-    }
-    selected_bound = length_bound_map.get(report_length, length_bound_map["medium"])
-
     directives = revision_directives or {}
     must_fix = directives.get("must_fix", [])
     focus_areas = directives.get("focus_areas", [])
@@ -118,21 +104,12 @@ def build_writer_user_prompt(
         f"路由原因: {route_reason or '无'}"
     )
 
-    planning_rules = (
-        "写作流程要求: 先给出提纲并为每个二级标题分配字数预算，再按预算逐段写作；"
-        "若超出预算请优先压缩冗余段落，若不足预算请补充证据解释与方法细节；"
-        "禁止仅在文末做生硬截断。"
-    )
-
     return (
         f"研究主题: {topic}\n"
         f"当前迭代轮次: {revision_step}\n"
-        f"目标篇幅: {report_length}（{selected_length_hint}）\n"
-        f"字数要求: {selected_bound}\n"
         f"评审反馈: {critique_feedback or '无'}\n\n"
         f"结构化修订指令:\n{directive_text}\n\n"
         f"检索上下文:\n{context_snippet}\n\n"
-        f"{planning_rules}\n"
         "请输出包含: 摘要、背景、关键发现、风险与局限、结论与建议。"
         "若为迭代修订，必须逐条响应评审反馈并修复 must_fix 项。"
     )

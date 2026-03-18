@@ -297,14 +297,87 @@ def _build_quality_summary(contexts: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _topic_keywords(topic: str) -> List[str]:
     """从主题中抽取轻量关键词，用于相关性过滤。"""
 
-    tokens = [t.strip().lower() for t in re.split(r"[^A-Za-z0-9\u4e00-\u9fff]+", topic) if t.strip()]
-    short_allowlist = {"c", "v", "ai", "ml", "isa", "cpu", "gpu"}
+    text = (topic or "").strip().lower()
+    if not text:
+        return []
+
+    # 中英混写主题（如“nike和adidas的品牌侧重分析”）先按脚本类型切块，避免整句被当成一个 token。
+    rough_chunks = re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]+", text)
+
+    cn_stop_words = {
+        "的",
+        "和",
+        "与",
+        "及",
+        "对",
+        "在",
+        "是",
+        "比较",
+        "分析",
+        "研究",
+        "侧重",
+        "异同",
+        "区别",
+        "优劣",
+    }
+    cn_topic_terms = [
+        "品牌",
+        "性能",
+        "架构",
+        "市场",
+        "策略",
+        "技术",
+        "营收",
+        "利润",
+        "供应链",
+        "风险",
+        "结论",
+    ]
+    alias_map = {
+        "nike": ["耐克"],
+        "adidas": ["阿迪达斯"],
+        "iphone": ["苹果", "iphone"],
+        "oppo": ["欧珀", "oppo"],
+        "risc-v": ["riscv", "risc-v", "risc v"],
+    }
+    short_allowlist = {"c", "v", "ai", "ml", "isa", "cpu", "gpu", "risc"}
+
+    candidates: List[str] = []
+    for chunk in rough_chunks:
+        if re.search(r"[a-z0-9]", chunk):
+            candidates.append(chunk)
+            continue
+
+        # 中文块按常见连接词进一步拆分，提取“品牌/性能/架构”等有效词。
+        parts = [
+            p.strip()
+            for p in re.split(r"[的和与及在对是、，。：；（）()\-\s]+", chunk)
+            if p.strip()
+        ]
+        if parts:
+            candidates.extend(parts)
+        else:
+            candidates.append(chunk)
+
+        for term in cn_topic_terms:
+            if term in chunk:
+                candidates.append(term)
+
     picked: List[str] = []
-    for token in tokens:
-        if len(token) >= 2 or re.search(r"[\u4e00-\u9fff]", token) or token in short_allowlist:
-            if token not in picked:
-                picked.append(token)
-    return picked[:14]
+    for token in candidates:
+        if token in cn_stop_words:
+            continue
+        if len(token) < 2 and token not in short_allowlist:
+            continue
+        if token not in picked:
+            picked.append(token)
+
+        if token in alias_map:
+            for alias in alias_map[token]:
+                if alias not in picked:
+                    picked.append(alias)
+
+    return picked[:16]
 
 
 def _text_signal_ratio(text: str) -> float:

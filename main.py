@@ -26,8 +26,7 @@ def _format_trace_item(item: dict[str, Any]) -> str:
     if node == "writer":
         return (
             f"node={node} rev={revision} mode={mode} "
-            f"draft_len={item.get('draft_len', 0)} planned={item.get('planned_sections', 0)} "
-            f"complete={item.get('complete', False)} "
+            f"draft_len={item.get('draft_len', 0)} "
             f"mapped={item.get('mapped_items', 0)}"
         )
     if node == "reviewer":
@@ -51,12 +50,6 @@ def parse_args() -> argparse.Namespace:
         help="研究主题",
     )
     parser.add_argument(
-        "--report-length",
-        choices=["short", "medium", "long"],
-        default="medium",
-        help="报告篇幅控制",
-    )
-    parser.add_argument(
         "--output-mode",
         choices=["user", "debug"],
         default="debug",
@@ -77,7 +70,6 @@ def run() -> dict[str, Any]:
     app = compile_graph(max_revisions=max_revisions)
     initial_state = create_initial_state(
         topic=args.topic,
-        report_length=args.report_length,
         output_mode=args.output_mode,
     )
     final_state = app.invoke(initial_state)

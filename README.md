@@ -30,16 +30,52 @@ pip install -r requirements.txt
 
 > 安全建议：不要把真实密钥提交到 `.env.example`。真实密钥仅放在本地 `.env`。
 
-## 3) 运行
+## 3) 运行与导出命令（常用场景）
+
+### 3.1 仅在终端跑一轮（查看流程状态）
 
 ```bash
-python main.py --topic "多智能体系统在科研自动化中的应用" --report-length medium --output-mode debug
+python main.py --topic "多智能体系统在科研自动化中的应用" --output-mode debug
 ```
 
 可选参数：
 
-- `--report-length {short,medium,long}`：控制正文篇幅和细节粒度。
-- `--output-mode {user,debug}`：控制导出呈现方式。
+- `--output-mode {user,debug}`：写入状态中的输出模式标记。
+
+### 3.2 导出用户版报告（仅正文+参考文献）
+
+```bash
+python export_report.py --topic "RISC-C和RISC-V架构的异同点" --output-mode user
+```
+
+### 3.3 导出调试版报告（含轨迹/评审/错误）
+
+```bash
+python export_report.py --topic "RISC-C和RISC-V架构的异同点" --output-mode debug
+```
+
+### 3.4 单次运行同时导出 user + debug（推荐）
+
+```bash
+python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode both --output reports/oppo-vs-iphone.md
+```
+
+输出文件将自动生成为：
+
+- `reports/oppo-vs-iphone-user.md`
+- `reports/oppo-vs-iphone-debug.md`
+
+### 3.5 只对外输出 user，但内部仍执行完整调试链路
+
+```bash
+python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode user_only --output reports/oppo-vs-iphone-user.md
+```
+
+### 3.6 指定输出文件名
+
+```bash
+python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode debug --output reports/oppo-vs-iphone-debug.md
+```
 
 ## 4) 当前实现说明
 
@@ -90,7 +126,7 @@ python main.py --topic "多智能体系统在科研自动化中的应用" --repo
 ## 7) 导出完整报告（不改变 `main.py` 输出）
 
 ```bash
-python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较" --report-length long --output-mode debug
+python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较" --output-mode debug
 ```
 
 可选参数：
@@ -99,6 +135,15 @@ python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较"
 - `--output reports/custom-report.md`
 - `--output-mode user`（仅输出最终报告正文）
 - `--output-mode debug`（输出每轮草稿、评审、轨迹与错误）
+
+### 7.1 能否一次运行同时输出 debug 和 user？
+
+当前**不能在单次命令里同时输出两个版本**，原因是：
+
+目前已支持单次运行双导出，不再需要连续跑两次：
+
+1. `--output-mode both`：一次运行，写出 `*-user.md` 与 `*-debug.md`。
+2. `--output-mode user_only`：一次运行完整流程，但仅导出用户版文件。
 
 ## 8) 统一搜索策略（阶梯式配额）
 
@@ -128,7 +173,6 @@ python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较"
 ## 10) 新增优化能力
 
 - **反馈修订映射**：`writer` 会把 `must_fix` 项映射到本轮草稿章节，`debug` 报告中可查看 `issue -> section`。
-- **篇幅硬约束**：`short/medium/long` 对应净字数区间 `800-1200` / `1800-2600` / `3200-4500`，超限会自动裁剪并记录。
 - **来源质量评分**：`researcher` 会按来源类型与域名生成 `quality_tier`（A/B/C）和 `quality_score`，并输出 `source_quality_summary`。
 - **来源过滤阈值**：`researcher` 会按 `quality/signal/relevance/composite` 四维评分过滤低质量来源，并在 `debug` 报告中输出阈值、权重、均值与剔除原因。
 
