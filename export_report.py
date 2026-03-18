@@ -269,6 +269,22 @@ def _render_markdown_debug(state: ResearchState) -> str:
                     f"signal={scores.get('signal_ratio', 'N/A')}, relevance={scores.get('relevance', 'N/A')}, "
                     f"composite={scores.get('composite', 'N/A')}"
                 )
+                relevance_detail = scores.get("relevance_detail", {}) if isinstance(scores, dict) else {}
+                if isinstance(relevance_detail, dict) and relevance_detail:
+                    lines.append(
+                        "  - 相关性明细: "
+                        f"base={relevance_detail.get('base', 'N/A')}, "
+                        f"title_hits={relevance_detail.get('title_hits', 0)}, "
+                        f"summary_hits={relevance_detail.get('summary_hits', 0)}, "
+                        f"content_hits={relevance_detail.get('content_hits', 0)}, "
+                        f"raw={relevance_detail.get('weighted_raw', 'N/A')}"
+                    )
+                    keywords = relevance_detail.get("keywords", [])
+                    if isinstance(keywords, list) and keywords:
+                        lines.append(
+                            f"  - 相关关键词样本({len(keywords)}/{relevance_detail.get('keywords_total', len(keywords))}): "
+                            + ", ".join([str(k) for k in keywords])
+                        )
         else:
             lines.append(f"- {str(item)[:260]}")
     if not contexts:

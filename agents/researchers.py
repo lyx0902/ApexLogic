@@ -390,11 +390,20 @@ def _text_signal_ratio(text: str) -> float:
     return round(len(signal) / max(len(cleaned), 1), 3)
 
 
-def _topic_relevance_score(topic_keywords: List[str], title: str, summary: str, content: str) -> float:
-    """基于关键词命中计算主题相关性（0-1）。"""
+def _topic_relevance_detail(topic_keywords: List[str], title: str, summary: str, content: str) -> Dict[str, Any]:
+    """基于关键词命中计算主题相关性，并返回可解释明细。"""
 
     if not topic_keywords:
-        return 0.5
+        return {
+            "score": 0.5,
+            "base": 1,
+            "title_hits": 0,
+            "summary_hits": 0,
+            "content_hits": 0,
+            "weighted_raw": 0.5,
+            "keywords": [],
+            "keywords_total": 0,
+        }
 
     title_text = title.lower()
     summary_text = summary.lower()
@@ -405,8 +414,24 @@ def _topic_relevance_score(topic_keywords: List[str], title: str, summary: str, 
     content_hits = sum(1 for kw in topic_keywords if kw in content_text)
 
     base = max(min(len(topic_keywords), 6), 1)
-    weighted = (title_hits * 0.5 + summary_hits * 0.3 + content_hits * 0.2) / base
-    return round(min(weighted, 1.0), 3)
+    weighted_raw = (title_hits * 0.5 + summary_hits * 0.3 + content_hits * 0.2) / base
+    score = round(min(weighted_raw, 1.0), 3)
+    return {
+        "score": score,
+        "base": base,
+        "title_hits": title_hits,
+        "summary_hits": summary_hits,
+        "content_hits": content_hits,
+        "weighted_raw": round(weighted_raw, 3),
+        "keywords": topic_keywords[:8],
+        "keywords_total": len(topic_keywords),
+    }
+
+
+def _topic_relevance_score(topic_keywords: List[str], title: str, summary: str, content: str) -> float:
+    """兼容旧调用：仅返回相关性分数。"""
+
+    return float(_topic_relevance_detail(topic_keywords, title, summary, content).get("score", 0.5))
 
 
 def _filter_contexts_by_thresholds(
@@ -444,7 +469,8 @@ def _filter_contexts_by_thresholds(
         content = str(item.get("content", ""))
         quality = float(item.get("quality_score", 0.0))
         signal_ratio = _text_signal_ratio(core_summary or content)
-        relevance = _topic_relevance_score(keywords, title, core_summary, content)
+        relevance_detail = _topic_relevance_detail(keywords, title, core_summary, content)
+        relevance = float(relevance_detail.get("score", 0.5))
         composite = round(
             quality * weight_quality + signal_ratio * weight_signal + relevance * weight_relevance,
             3,
@@ -466,6 +492,15 @@ def _filter_contexts_by_thresholds(
             "signal_ratio": signal_ratio,
             "relevance": relevance,
             "composite": composite,
+            "relevance_detail": {
+                "base": relevance_detail.get("base", 1),
+                "title_hits": relevance_detail.get("title_hits", 0),
+                "summary_hits": relevance_detail.get("summary_hits", 0),
+                "content_hits": relevance_detail.get("content_hits", 0),
+                "weighted_raw": relevance_detail.get("weighted_raw", relevance),
+                "keywords": relevance_detail.get("keywords", []),
+                "keywords_total": relevance_detail.get("keywords_total", 0),
+            },
         }
         enriched["filter_passed"] = not reasons
         enriched["filter_reasons"] = reasons
