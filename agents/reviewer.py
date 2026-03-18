@@ -117,6 +117,101 @@ def _sanitize_json_text(text: str) -> str:
     return cleaned
 
 
+def _coerce_text_review_to_json(raw: str) -> Dict[str, Any] | None:
+    """当模型返回非 JSON 文本时，做最小语义兜底，避免整轮降级。"""
+
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+
+    lowered = text.lower()
+    pass_markers = ["[pass]", "评审通过", "通过当前评审", "可结束流程"]
+    is_pass = any(marker in lowered for marker in pass_markers)
+
+    def _extract_after(label_patterns: List[str]) -> List[str]:
+        items: List[str] = []
+        for pattern in label_patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
+            if not match:
+                continue
+            block = (match.group(1) or "").strip()
+            if not block:
+                continue
+            items.extend(_to_issue_list(block))
+        # 去重并保持顺序
+        dedup: List[str] = []
+        seen: set[str] = set()
+        for item in items:
+            if item in seen:
+                continue
+            seen.add(item)
+            dedup.append(item)
+        return dedup
+
+    fact_issues = _extract_after([
+        r"fact[_\s-]*issues\s*[:：]\s*(.+?)(?:\n\n|$)",
+        r"事实问题\s*[:：]\s*(.+?)(?:\n\n|$)",
+    ])
+    logic_issues = _extract_after([
+        r"logic[_\s-]*issues\s*[:：]\s*(.+?)(?:\n\n|$)",
+        r"逻辑问题\s*[:：]\s*(.+?)(?:\n\n|$)",
+    ])
+    info_gaps = _extract_after([
+        r"info[_\s-]*gaps\s*[:：]\s*(.+?)(?:\n\n|$)",
+        r"信息缺口\s*[:：]\s*(.+?)(?:\n\n|$)",
+    ])
+
+    needs_more_research = any(k in text for k in ["补充检索", "信息不足", "证据不足", "缺少来源"]) or bool(info_gaps)
+
+    if is_pass:
+        return {
+            "supporter": {
+                "strengths": ["审稿文本判定为通过"],
+                "supported_claims": ["可进入交付阶段"],
+            },
+            "skeptic": {
+                "critical_issues": [],
+                "missing_evidence": [],
+            },
+            "judge": {
+                "is_satisfactory": True,
+                "needs_more_research": False,
+                "critique_feedback": "草稿通过当前评审，可结束流程。",
+                "confidence": 0.7,
+                "fact_issues": fact_issues,
+                "logic_issues": logic_issues,
+                "info_gaps": info_gaps,
+                "controversy_points": [],
+                "evidence_verdicts": [],
+            },
+        }
+
+    feedback = text[:1200]
+    return {
+        "supporter": {
+            "strengths": [],
+            "supported_claims": [],
+        },
+        "skeptic": {
+            "critical_issues": fact_issues + logic_issues,
+            "missing_evidence": info_gaps,
+        },
+        "judge": {
+            "is_satisfactory": False,
+            "needs_more_research": needs_more_research,
+            "critique_feedback": feedback,
+            "confidence": 0.55,
+            "fact_issues": fact_issues,
+            "logic_issues": logic_issues,
+            "info_gaps": info_gaps,
+            "controversy_points": [],
+            "evidence_verdicts": [],
+        },
+    }
+
+
 def _parse_review_json(raw: str) -> Dict[str, Any]:
     """解析 Reviewer 输出 JSON，兼容常见格式噪声。"""
 
@@ -146,6 +241,11 @@ def _parse_review_json(raw: str) -> Dict[str, Any]:
                 return parsed
         except Exception:
             pass
+
+    # 最后兜底：若是非 JSON 的自然语言评审，转为最小结构化对象。
+    coerced = _coerce_text_review_to_json(raw)
+    if isinstance(coerced, dict):
+        return coerced
 
     raise ValueError("Reviewer 输出无法解析为结构化 JSON")
 
@@ -348,7 +448,18 @@ def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
         ]
     )
 
-    content = getattr(response, "content", "") or ""
+    content_obj = getattr(response, "content", "")
+    if isinstance(content_obj, list):
+        # 兼容部分模型 SDK 返回分块内容结构
+        content = "\n".join(
+            [
+                str(item.get("text", "")) if isinstance(item, dict) else str(item)
+                for item in content_obj
+            ]
+        ).strip()
+    else:
+        content = str(content_obj or "")
+
     parsed = _parse_review_json(content)
     parsed_dict = parsed if isinstance(parsed, dict) else {}
     supporter = parsed_dict.get("supporter", {})
