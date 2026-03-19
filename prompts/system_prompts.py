@@ -83,11 +83,7 @@ def build_writer_user_prompt(
             title = item.get("title", f"source-{idx}")
             content = item.get("content", "")
             citation = item.get("citation_id", f"S{idx}")
-            quality_tier = item.get("quality_tier", "C")
-            quality_score = item.get("quality_score", 0.5)
-            chunks.append(
-                f"[{citation}|tier={quality_tier}|score={quality_score}] {title}: {content[:400]}"
-            )
+            chunks.append(f"[{citation}] {title}: {content[:400]}")
         else:
             chunks.append(f"[{idx}] {str(item)[:400]}")
 

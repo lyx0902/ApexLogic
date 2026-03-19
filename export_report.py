@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from datetime import datetime
 from pathlib import Path
@@ -94,7 +95,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
     errors = state.get("errors", []) or []
     history = state.get("iteration_history", []) or []
     quality_summary = state.get("source_quality_summary", {}) or {}
-    filter_summary = quality_summary.get("filter_summary", {}) or {}
+    bge_summary = quality_summary.get("bge_summary", {}) or {}
 
     lines: List[str] = []
 
@@ -108,14 +109,30 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
     lines.append(f"- 评审置信度: {review.get('confidence', 'N/A')}")
     lines.append(f"- 输出模式: {state.get('output_mode', 'debug')}")
-    lines.append(f"- 来源质量均分: {quality_summary.get('avg_score', 'N/A')}")
-    lines.append(f"- 来源质量分层: {quality_summary.get('tier_counts', {})}")
-    if filter_summary:
-        lines.append(f"- 过滤阈值: {filter_summary.get('thresholds', {})}")
-        lines.append(f"- 过滤权重: {filter_summary.get('weights', {})}")
-        lines.append(f"- 过滤结果: kept={filter_summary.get('kept', 0)}, dropped={filter_summary.get('dropped', 0)}")
-        lines.append(f"- 过滤均值: {filter_summary.get('avg_scores', {})}")
-        lines.append(f"- 过滤原因统计: {filter_summary.get('reason_counts', {})}")
+    if bge_summary:
+        lines.append(f"- BGE 广搜目标总量: {sum((bge_summary.get('broad_targets', {}) or {}).values())}")
+        lines.append(f"- BGE 广搜计划请求量: {bge_summary.get('broad_attempted', 0)}")
+        lines.append(f"- BGE 广搜有效返回量: {bge_summary.get('broad_total', 0)}")
+        lines.append(f"- BGE 去重后候选: {bge_summary.get('dedup_total', 0)}")
+        lines.append(f"- BGE 配额来源: {bge_summary.get('quota_source', {})}")
+        lines.append(f"- BGE Provider 统计: {bge_summary.get('broad_fetched', {})}")
+        retr = bge_summary.get("retriever", {}) or {}
+        rer = bge_summary.get("reranker", {}) or {}
+        lines.append(
+            f"- BGE Retriever: mode={retr.get('mode', 'unknown')}, model={retr.get('model', '')}, "
+            f"selected={retr.get('selected', 0)}/{retr.get('input', 0)}"
+        )
+        lines.append(
+            f"- BGE Reranker: mode={rer.get('mode', 'unknown')}, model={rer.get('model', '')}, "
+            f"selected={rer.get('selected', 0)}/{rer.get('input', 0)}"
+        )
+        if retr.get("error"):
+            lines.append(f"- BGE Retriever 错误: {retr.get('error')}")
+        if rer.get("error"):
+            lines.append(f"- BGE Reranker 错误: {rer.get('error')}")
+        bge_config = bge_summary.get("config", {}) or {}
+        if bge_config:
+            lines.append(f"- BGE 配置快照: {bge_config}")
     lines.append("")
 
     lines.append("## 2. 研究正文")
@@ -208,12 +225,10 @@ def _render_markdown_debug(state: ResearchState) -> str:
 
         review_item = item.get("review", {}) or {}
         mapping = item.get("feedback_paragraph_mapping", []) or []
-        round_quality = item.get("source_quality_summary", {}) or {}
         lines.append("- 评审结论:")
         lines.append(f"  - is_satisfactory: {item.get('is_satisfactory', False)}")
         lines.append(f"  - next_route: {item.get('next_route', '')}")
         lines.append(f"  - critique_feedback: {review_item.get('critique_feedback', '')}")
-        lines.append(f"  - source_quality_summary: {round_quality}")
         lines.append("")
 
         lines.append("- 反馈修订映射（must_fix -> 章节）:")
@@ -262,46 +277,11 @@ def _render_markdown_debug(state: ResearchState) -> str:
             lines.append(f"- [{citation_id}] {title} ({source})")
             if url:
                 lines.append(f"  - url: {url}")
-            scores = item.get("filter_scores", {}) if isinstance(item, dict) else {}
-            if scores:
-                lines.append(
-                    f"  - 过滤评分: quality={scores.get('quality', 'N/A')}, "
-                    f"signal={scores.get('signal_ratio', 'N/A')}, relevance={scores.get('relevance', 'N/A')}, "
-                    f"composite={scores.get('composite', 'N/A')}"
-                )
-                relevance_detail = scores.get("relevance_detail", {}) if isinstance(scores, dict) else {}
-                if isinstance(relevance_detail, dict) and relevance_detail:
-                    lines.append(
-                        "  - 相关性明细: "
-                        f"base={relevance_detail.get('base', 'N/A')}, "
-                        f"title_hits={relevance_detail.get('title_hits', 0)}, "
-                        f"summary_hits={relevance_detail.get('summary_hits', 0)}, "
-                        f"content_hits={relevance_detail.get('content_hits', 0)}, "
-                        f"raw={relevance_detail.get('weighted_raw', 'N/A')}"
-                    )
-                    keywords = relevance_detail.get("keywords", [])
-                    if isinstance(keywords, list) and keywords:
-                        lines.append(
-                            f"  - 相关关键词样本({len(keywords)}/{relevance_detail.get('keywords_total', len(keywords))}): "
-                            + ", ".join([str(k) for k in keywords])
-                        )
         else:
             lines.append(f"- {str(item)[:260]}")
     if not contexts:
         lines.append("- 无")
     lines.append("")
-
-    if filter_summary:
-        lines.append("### 5.1 被过滤样本（最多5条）")
-        dropped_samples = filter_summary.get("dropped_samples", []) or []
-        if dropped_samples:
-            for item in dropped_samples:
-                lines.append(
-                    f"- {item.get('title', '')} ({item.get('source', '')}) -> {item.get('reasons', [])}"
-                )
-        else:
-            lines.append("- 无")
-        lines.append("")
 
     lines.append("## 6. 执行轨迹")
     lines.append("")
@@ -361,6 +341,59 @@ def _render_by_mode(state: ResearchState, mode: str) -> Dict[str, str]:
     return {"user": user_md, "debug": debug_md}
 
 
+def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
+    """构建 BGE 过程明细 JSON 载荷。"""
+
+    bge_summary = (state.get("source_quality_summary", {}) or {}).get("bge_summary", {}) or {}
+    retr = bge_summary.get("retriever", {}) or {}
+    rer = bge_summary.get("reranker", {}) or {}
+    retr_query = str(retr.get("query", "") or state.get("topic", ""))
+    rer_query = str(state.get("topic", ""))
+
+    def _attach_query(records: List[Dict[str, object]], query: str) -> List[Dict[str, object]]:
+        enriched: List[Dict[str, object]] = []
+        for row in records:
+            item = dict(row)
+            item["query"] = query
+            enriched.append(item)
+        return enriched
+
+    return {
+        "topic": state.get("topic", ""),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "search_queries": state.get("search_queries", []),
+        "bge": {
+            "broad_targets": bge_summary.get("broad_targets", {}),
+            "quota_source": bge_summary.get("quota_source", {}),
+            "broad_fetched": bge_summary.get("broad_fetched", {}),
+            "broad_attempted": bge_summary.get("broad_attempted", 0),
+            "broad_total": bge_summary.get("broad_total", 0),
+            "dedup_total": bge_summary.get("dedup_total", 0),
+            "config": bge_summary.get("config", {}),
+            "retriever": {
+                "mode": retr.get("mode", "unknown"),
+                "model": retr.get("model", ""),
+                "query": retr_query,
+                "input": retr.get("input", 0),
+                "selected": retr.get("selected", 0),
+                "dropped_count": retr.get("dropped_count", 0),
+                "selected_records": _attach_query(retr.get("selected_records", []), retr_query),
+                "dropped_records": _attach_query(retr.get("dropped_records", []), retr_query),
+            },
+            "reranker": {
+                "mode": rer.get("mode", "unknown"),
+                "model": rer.get("model", ""),
+                "query": rer_query,
+                "input": rer.get("input", 0),
+                "selected": rer.get("selected", 0),
+                "dropped_count": rer.get("dropped_count", 0),
+                "selected_records": _attach_query(rer.get("selected_records", []), rer_query),
+                "dropped_records": _attach_query(rer.get("dropped_records", []), rer_query),
+            },
+        },
+    }
+
+
 def run_and_export(
     topic: str,
     max_revisions: int | None,
@@ -395,7 +428,10 @@ def run_and_export(
         user_path, debug_path = paths
         user_path.write_text(outputs["user"], encoding="utf-8")
         debug_path.write_text(outputs["debug"], encoding="utf-8")
-        saved_paths.extend([str(user_path), str(debug_path)])
+        bge_json_path = user_path.parent / f"{user_path.stem.rsplit('-user', 1)[0]}-bge-details.json"
+        bge_payload = _build_bge_details_payload(state)
+        bge_json_path.write_text(json.dumps(bge_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        saved_paths.extend([str(user_path), str(debug_path), str(bge_json_path)])
     else:
         path = paths[0]
         key = "debug" if normalized_mode == "debug" else "user"

@@ -19,7 +19,9 @@ def _format_trace_item(item: dict[str, Any]) -> str:
     if node == "researcher":
         return (
             f"node={node} rev={revision} queries={item.get('queries', 0)} "
-            f"contexts={item.get('contexts', 0)} quality_avg={item.get('quality_avg', 0.0)} "
+            f"broad={item.get('broad_total', 0)} dedup={item.get('dedup_total', 0)} "
+            f"ret20={item.get('retriever_topk', 0)} rerank10={item.get('reranker_topk', 0)} "
+            f"contexts={item.get('contexts', 0)} "
             f"dropped={item.get('dropped', 0)} "
             f"errors={item.get('errors', 0)}"
         )

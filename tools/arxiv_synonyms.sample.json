@@ -1,0 +1,15 @@
+{
+  "比较": ["comparison", "versus", "contrast"],
+  "对比": ["comparison", "vs"],
+  "趋势": ["trend", "outlook", "trajectory"],
+  "挑战": ["challenge", "bottleneck", "constraint"],
+  "风险": ["risk", "limitation", "uncertainty"],
+  "应用": ["application", "use case", "deployment"],
+  "方法": ["method", "approach", "technique"],
+  "评估": ["evaluation", "benchmark", "assessment"],
+  "优化": ["optimization", "improvement"],
+  "性能": ["performance", "efficiency", "latency"],
+  "review": ["survey", "overview"],
+  "framework": ["system", "architecture"]
+}
+

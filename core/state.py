@@ -41,7 +41,7 @@ class ResearchState(ResearchStateCore, total=False):
     iteration_history: List[Dict[str, Any]]
     # Writer 对评审项的修订映射（must_fix -> 段落/章节）
     feedback_paragraph_mapping: List[Dict[str, Any]]
-    # Researcher 生成的来源质量统计摘要
+    # Researcher 生成的检索阶段摘要（当前用于 BGE pipeline 统计）
     source_quality_summary: Dict[str, Any]
     # 报告输出模式：user(面向读者) / debug(含系统细节)
     output_mode: Literal["user", "debug"]

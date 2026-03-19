@@ -1,185 +1,217 @@
 # ApexLogic Deep Research Multi-Agent
 
-基于 LangGraph 的深度研究多智能体系统（Researcher / Writer / Reviewer）。
+基于 `LangGraph` 的深度研究多智能体系统，采用 `Researcher -> Writer -> Reviewer` 循环流程，支持 BGE 语义检索筛选、结构化评审与多格式报告导出。
 
-## 1) 安装
+## 1. 项目目标
+
+- 输入一个研究主题，自动完成检索、写作、评审与迭代修订。
+- 输出两类报告：`user`（面向读者）与 `debug`（可观测执行过程）。
+- 在 `both` 模式下额外导出 BGE 检索明细 JSON，便于离线分析召回与重排质量。
+
+## 2. 当前架构（目录与职责）
+
+- `core/state.py`：定义全局状态 `ResearchState` 与初始化函数。
+- `core/graph.py`：构建 `StateGraph`，配置节点与条件路由。
+- `agents/researchers.py`：检索代理，负责查询词、广搜、去重、BGE 两阶段筛选。
+- `agents/writer.py`：写作代理，基于上下文与评审反馈生成/修订草稿。
+- `agents/reviewer.py`：评审代理，优先 LLM 结构化评审，失败回退规则评审。
+- `bge/retriever.py`：向量召回（粗筛，默认 top20）。
+- `bge/reranker.py`：重排序（精排，默认 top10）。
+- `tools/search_tool.py`：DDG + Tavily 搜索封装。
+- `tools/arxiv_tool.py`：ArXiv 检索封装（含多轮回退查询策略）。
+- `prompts/system_prompts.py`：三类 Agent 的系统提示词与用户提示词构造。
+- `main.py`：命令行运行入口（打印核心状态与 trace）。
+- `export_report.py`：报告导出入口（`user/debug/both/user_only`）。
+- `tools/arxiv_synonyms.sample.json`：ArXiv 同义词词表示例。
+
+## 3. 全流程链路说明
+
+一次完整请求按以下步骤执行：
+
+1. **初始化状态**
+   - 使用 `create_initial_state(topic, output_mode)` 创建初始状态。
+   - 关键字段包含：`topic`、`search_queries`、`retrieved_context`、`draft`、`review_result`、`execution_trace`、`errors` 等。
+
+2. **Researcher 节点（检索与筛选）**
+   - 先生成基础查询词；如有 `critique_feedback` / `revision_directives`，会补充定向检索词。
+   - 若配置了 DeepSeek，优先做查询词重写（失败自动回退规则查询词）。
+   - 按每轮总配额广搜（默认）：
+     - `DDG_TOTAL_RESULTS=35`
+     - `ARXIV_TOTAL_RESULTS=20`
+     - `TAVILY_TOTAL_RESULTS=5`
+   - 三路结果统一去重、标准化后，进入 BGE 两阶段筛选：
+     - Retriever：top20
+     - Reranker：top10
+   - 最终上下文写入 `retrieved_context`，并连续编号 `citation_id`（`S1...`）。
+
+3. **Writer 节点（生成/修订草稿）**
+   - 消费 `retrieved_context` 与 `critique_feedback`。
+   - 生成结构化研究草稿（摘要、背景、关键发现、风险局限、结论建议）。
+   - 迭代时基于 `revision_directives.must_fix` 做定向修订。
+   - 输出 `feedback_paragraph_mapping`（问题到段落映射）用于 debug 可追踪。
+
+4. **Reviewer 节点（结构化评审）**
+   - 评审维度：事实、逻辑、信息缺口、争议点与证据裁决。
+   - 期望输出结构化 JSON：`is_satisfactory`、`needs_more_research`、`fact_issues`、`logic_issues`、`info_gaps` 等。
+   - 如果模型输出不可解析，自动回退到规则评审，保证流程不中断。
+
+5. **条件路由与循环终止**
+   - `is_satisfactory=True` -> `END`
+   - 或 `revision_step >= MAX_REVISIONS` -> `END`
+   - 否则按 `next_route` 回到 `researcher` 或 `writer`。
+
+6. **导出阶段**
+   - `user`：正文 + 参考文献。
+   - `debug`：元信息 + 正文 + 评审 + 历史 + 执行轨迹 + 错误。
+   - `both`：一次运行输出 `user/debug` 两份 Markdown，并额外输出 BGE 明细 JSON。
+
+## 4. 安装与环境配置
+
+### 4.1 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 2) 配置环境变量
+### 4.2 配置 `.env`
 
-复制 `.env.example` 为 `.env`，填写 API Key：
+复制 `.env.example` 为 `.env`，至少配置：
 
 - `DEEPSEEK_API_KEY`
-- `TAVILY_API_KEY`（可选，仅在启用 Tavily 回退时需要）
+- `BGE_EMBED_API_KEY`
+- `BGE_RERANK_API_KEY`
 
-可选参数：
+可选：
 
+- `TAVILY_API_KEY`（建议配置，提升网页质量）
 - `DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com/v1`）
 - `DEEPSEEK_MODEL`（默认 `deepseek-chat`）
 - `MAX_REVISIONS`（默认 `3`）
-- `SEARCH_QUERY_BUDGET`（默认 `3`，每轮最多使用多少条查询词）
-- `DDG_RESULTS_PER_QUERY`（默认 `10`）
-- `ARXIV_RESULTS_PER_QUERY`（默认 `5`）
-- `TAVILY_RESULTS_PER_QUERY`（默认 `3`）
-- `MIN_SOURCE_QUALITY` / `MIN_SOURCE_SIGNAL` / `MIN_SOURCE_RELEVANCE` / `MIN_SOURCE_COMPOSITE`
-- `FILTER_WEIGHT_QUALITY` / `FILTER_WEIGHT_SIGNAL` / `FILTER_WEIGHT_RELEVANCE`
-- `MIN_CONTEXT_KEEP`（过滤后最少保留上下文数量）
+- `SEARCH_QUERY_BUDGET`（默认 `3`）
+- `DDG_TOTAL_RESULTS` / `ARXIV_TOTAL_RESULTS` / `TAVILY_TOTAL_RESULTS`（默认 `35/20/5`）
+- `BGE_RETRIEVER_TOP_K` / `BGE_RERANKER_TOP_K`（默认 `20/10`）
+- `ARXIV_SYNONYM_FILE`（可选，同义词词典文件路径）
 
-> 安全建议：不要把真实密钥提交到 `.env.example`。真实密钥仅放在本地 `.env`。
+兼容变量：
 
-## 3) 运行与导出命令（常用场景）
+- 若未设置 `*_TOTAL_RESULTS`，会自动读取旧变量
+  `DDG_RESULTS_PER_QUERY` / `ARXIV_RESULTS_PER_QUERY` / `TAVILY_RESULTS_PER_QUERY`。
 
-### 3.1 仅在终端跑一轮（查看流程状态）
+## 5. 常用运行命令
+
+### 5.1 终端运行（查看状态与 trace）
 
 ```bash
 python main.py --topic "多智能体系统在科研自动化中的应用" --output-mode debug
 ```
 
-可选参数：
-
-- `--output-mode {user,debug}`：写入状态中的输出模式标记。
-
-### 3.2 导出用户版报告（仅正文+参考文献）
+### 5.2 仅导出用户版
 
 ```bash
 python export_report.py --topic "RISC-C和RISC-V架构的异同点" --output-mode user
 ```
 
-### 3.3 导出调试版报告（含轨迹/评审/错误）
+### 5.3 仅导出调试版
 
 ```bash
 python export_report.py --topic "RISC-C和RISC-V架构的异同点" --output-mode debug
 ```
 
-### 3.4 单次运行同时导出 user + debug（推荐）
+### 5.4 一次运行导出 user + debug + BGE JSON（推荐）
 
 ```bash
 python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode both --output reports/oppo-vs-iphone.md
 ```
 
-输出文件将自动生成为：
+将生成：
 
 - `reports/oppo-vs-iphone-user.md`
 - `reports/oppo-vs-iphone-debug.md`
+- `reports/oppo-vs-iphone-bge-details.json`
 
-### 3.5 只对外输出 user，但内部仍执行完整调试链路
+### 5.5 仅对外导出 user（内部仍跑完整链路）
 
 ```bash
 python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode user_only --output reports/oppo-vs-iphone-user.md
 ```
 
-### 3.6 指定输出文件名
+## 6. 输出文件说明
 
-```bash
-python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode debug --output reports/oppo-vs-iphone-debug.md
+### 6.1 `*-user.md`
+
+- 面向最终读者。
+- 包含研究正文与参考文献。
+
+### 6.2 `*-debug.md`
+
+- 面向调试与评估。
+- 包含运行元信息、评审反馈、迭代历史、执行轨迹、错误记录。
+- 不包含 BGE 全量逐条明细（这些放在 JSON）。
+
+### 6.3 `*-bge-details.json`（仅 `both` 模式）
+
+- 包含本轮 BGE 过程的结构化明细：
+  - 广搜配额统计（targets/attempted/fetched）
+  - Retriever 记录（selected/dropped）
+  - Reranker 记录（selected/dropped）
+  - 每条记录含 `query/url/title/score/reason/timestamp` 等字段
+
+示例片段：
+
+```json
+{
+  "rank": 1,
+  "title": "中美GDP差距再次缩小！25年中国GDP达20万亿美元，占美国 ... - 网易",
+  "source": "tavily",
+  "url": "https://www.163.com/dy/article/KJUUQ2L5055651K3.html",
+  "score": 0.780851,
+  "reason": "selected_top_k",
+  "timestamp": "2026-03-19T15:28:21",
+  "query": "2025年中国和美国GDP细分领域对比\n年中国与美国GDP构成预测：消费、投资、净出口占比对比\n中美产业结构对比 2025：制造业、服务业、数字经济增加值\n年中美GDP细分领域增长驱动力分析：科技创新与投资"
+}
 ```
 
-## 4) 当前实现说明
+## 7. ArXiv 检索机制（通用增强版）
 
-- `core/state.py`：全局状态定义（`ResearchState`）
-- `core/graph.py`：LangGraph 工作流与条件路由
-- `agents/researchers.py`：检索代理（阶梯式调用 `DuckDuckGo + ArXiv + Tavily`）
-- `agents/writer.py`：主笔代理（DeepSeek 生成/修订草稿，消费带引用的上下文）
-- `agents/reviewer.py`：评审代理（优先 DeepSeek 结构化 JSON 评审，失败回退规则评审）
-- `tools/search_tool.py`：检索工具封装（DuckDuckGo 与 Tavily）
-- `tools/arxiv_tool.py`：ArXiv 检索封装
-- `prompts/system_prompts.py`：统一系统提示词与提示构造函数
+`tools/arxiv_tool.py` 采用通用多轮回退查询，避免中文或混合 query 直接 0 命中：
 
-## 5) 降级行为
+1. 原始 query
+2. token 精简 query
+3. 中英通用意图词同义词扩展 query
+4. 英文 token-only query
 
-在缺少依赖、无 API Key、或外部调用失败时，系统会自动降级到本地占位逻辑并记录到 `errors`，保证图流程可继续执行。
+可选外部词库：
 
-## 6) 执行流程（实际运行）
+- 设置 `ARXIV_SYNONYM_FILE=/path/to/your_synonyms.json`
+- 可参考 `tools/arxiv_synonyms.sample.json`
 
-系统按如下顺序执行：
+## 8. 容错与降级策略
 
-1. `researcher` 生成查询词（可选 LLM 重写）并按阶梯配额检索：
-   - DuckDuckGo：每条 query 拉取约 10 条网页结果
-   - ArXiv：每条 query 拉取约 5 条学术结果
-   - Tavily：每条 query 拉取约 3 条高质量网页补充
-2. Researcher 对上下文去重并分配 `citation_id`（如 `S1`, `S2`）。
-3. `writer` 基于上下文与反馈生成草稿。
-4. `reviewer` 输出结构化评审结果（`is_satisfactory`, `needs_more_research`, `critique_feedback`）。
-5. 依据 `next_route` 路由到 `END` / `researcher` / `writer`，直到满意或达到最大迭代。
+- 任一外部 API 调用失败，错误会记录到 `errors`，流程尽量继续。
+- 未配置 LLM Key 时，Writer/Reviewer 启用本地回退逻辑，保证图可运行。
+- Reviewer 输出非 JSON 时，会做解析修复与规则化兜底，避免链路中断。
+- 广搜三路配额若都被配置成 0，会自动回退默认配额。
 
-运行结束后，状态中可查看：
+## 9. 调试建议
 
-- `review_result`：结构化评审结果
-- `execution_trace`：每个节点的执行轨迹摘要
-- `errors`：降级与异常信息
+- 先看 `debug` 报告中的：
+  - `BGE Provider 统计`
+  - `BGE Retriever/Reranker` 输入输出条数
+  - `错误与降级记录`
+- 再看 `*-bge-details.json`：
+  - 检查 `selected_records` 是否主题相关
+  - 对比 `dropped_records` 与 `selected_records` 的分数分布
 
-其中 `review_result` 额外包含：
-
-- `fact_issues`：事实性问题列表
-- `logic_issues`：逻辑性问题列表
-- `info_gaps`：信息缺口列表
-
-解释：
-
-- `fact_issues`：结论与证据不一致、引用不支持结论、事实可能错误。
-- `logic_issues`：论证链条断裂、因果跳跃、结论无法由前文推出。
-- `info_gaps`：当前检索上下文缺失关键材料，导致无法充分评估。
-
-## 7) 导出完整报告（不改变 `main.py` 输出）
+## 10. 快速自检
 
 ```bash
-python export_report.py --topic "gemini 3.1pro和gpt5.3 codex的benchmark比较" --output-mode debug
+python main.py --topic "多智能体系统中的反思机制与自我优化" --output-mode debug
+python export_report.py --topic "评测agent性能的几种常见benchmark概述与比较" --output-mode both --output reports/smoke.md
 ```
 
-可选参数：
+## 11. 安全提示
 
-- `--max-revisions 1`
-- `--output reports/custom-report.md`
-- `--output-mode user`（仅输出最终报告正文）
-- `--output-mode debug`（输出每轮草稿、评审、轨迹与错误）
-
-### 7.1 能否一次运行同时输出 debug 和 user？
-
-当前**不能在单次命令里同时输出两个版本**，原因是：
-
-目前已支持单次运行双导出，不再需要连续跑两次：
-
-1. `--output-mode both`：一次运行，写出 `*-user.md` 与 `*-debug.md`。
-2. `--output-mode user_only`：一次运行完整流程，但仅导出用户版文件。
-
-## 8) 统一搜索策略（阶梯式配额）
-
-当前默认三路搜索 API：
-
-1. **DuckDuckGo Search**：无需 Key，免费大批量，负责广域网页检索。
-2. **ArXiv API**：免费学术预印本检索。
-3. **Tavily API**：高质量网页补充检索（建议控制配额）。
-
-工程实现上，`agents/researchers.py` 会对每条 query 依次调用三类 provider，并在后处理阶段统一去重和筛选。
-
-### 配额调参
-
-- `SEARCH_QUERY_BUDGET`：控制每轮查询词数量。
-- `DDG_RESULTS_PER_QUERY` / `ARXIV_RESULTS_PER_QUERY` / `TAVILY_RESULTS_PER_QUERY`：控制每条 query 的三路检索配额。
-
-## 9) ArXiv 工具检索逻辑
-
-`tools/arxiv_tool.py` 的执行链路如下：
-
-1. 组装 ArXiv API 请求：`https://export.arxiv.org/api/query?search_query=all:<query>&max_results=<n>`。
-2. 使用 `urllib` 发起请求，并带上 `User-Agent` 避免被服务端按匿名脚本拒绝。
-3. 使用 `certifi` 提供的 CA 证书创建 SSL 上下文，减少 Windows 证书链导致的 `CERTIFICATE_VERIFY_FAILED`。
-4. 解析 Atom XML，提取 `title / summary / link`，转换为统一上下文结构：`title/url/source/content`。
-5. 返回给 `researcher` 节点，与 Tavily 结果统一去重并打上 `citation_id`。
-
-## 10) 新增优化能力
-
-- **反馈修订映射**：`writer` 会把 `must_fix` 项映射到本轮草稿章节，`debug` 报告中可查看 `issue -> section`。
-- **来源质量评分**：`researcher` 会按来源类型与域名生成 `quality_tier`（A/B/C）和 `quality_score`，并输出 `source_quality_summary`。
-- **来源过滤阈值**：`researcher` 会按 `quality/signal/relevance/composite` 四维评分过滤低质量来源，并在 `debug` 报告中输出阈值、权重、均值与剔除原因。
-
-评分依据说明：
-
-- `quality`：来源可信度先验（source 类型 + domain 规则分）。
-- `signal`：文本信号比（中文/英文/数字占比），用于过滤导航噪声页。
-- `relevance`：主题关键词在标题/摘要/正文的加权命中率。
-- `composite`：`quality*Wq + signal*Ws + relevance*Wr`（权重由环境变量控制）。
+- 不要把真实密钥提交到仓库。
+- `.env.example` 只放占位值。
+- 建议将报告与日志输出目录纳入版本管理策略（如按需 `.gitignore`）。
 
