@@ -169,7 +169,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
             contrib = round(float(s) * w, 2) if isinstance(s, (int, float)) else "?"
             rationale = str(score_rationale.get(dim, "")).replace("|", "｜")[:60]
             lines.append(f"| {dim} {label} | {s}/10 | {int(w*100)}% | {contrib} | {rationale} |")
-        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: 7.0 |" if weighted is not None else "")
+        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: 7.5 |" if weighted is not None else "")
         verdict = "✅ 通过" if review.get("is_satisfactory") else "❌ 未通过"
         lines.append(f"| **评审结论** | {verdict} | — | — | — |")
         lines.append("")
@@ -357,43 +357,85 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
 
     # ── MAB 自适应检索预算 ──────────────────────────────────────────
+    mab_state = state.get("mab_state", {}) or {}
     mab_data = bge_summary.get("mab", {}) or {}
-    if mab_data:
+    if mab_state or mab_data:
         lines.append("")
         lines.append("## 7. MAB 自适应检索预算（Thompson Sampling）")
         lines.append("")
-        base = mab_data.get("base_budgets", {})
-        alloc = mab_data.get("allocated_budgets", {})
-        rewards = mab_data.get("rewards", {})
-        exp_rewards = mab_data.get("expected_rewards_after", {})
-        mab_round = mab_data.get("round", "-")
-        lines.append(f"- 当前轮次: {mab_round}")
-        lines.append("")
-        lines.append("| 信源 | 基础配额 | 本轮分配 | 本轮奖励 | 期望奖励(更新后) |")
-        lines.append("|------|---------|---------|---------|----------------|")
-        for arm in ("duckduckgo", "arxiv", "tavily"):
-            b = base.get(arm, "-")
-            a = alloc.get(arm, "-")
-            r = rewards.get(arm)
-            r_str = f"{r:.4f}" if r is not None else "N/A"
-            e = exp_rewards.get(arm)
-            e_str = f"{e:.4f}" if e is not None else "N/A"
-            lines.append(f"| {arm} | {b} | {a} | {r_str} | {e_str} |")
+
+        mab_round = mab_state.get("round", mab_data.get("round", 0))
+        lines.append(f"- 累计更新轮次: {mab_round}")
         lines.append("")
 
-        mab_state = state.get("mab_state", {}) or {}
-        if mab_state:
-            lines.append("**Beta 分布参数（α, β）**")
+        # 7.1 各信源当前状态
+        arm_display = {"duckduckgo": "DuckDuckGo", "arxiv": "ArXiv", "tavily": "Tavily"}
+        alphas = mab_state.get("alpha", {})
+        betas = mab_state.get("beta", {})
+        lines.append("### 7.1 各信源当前状态")
+        lines.append("")
+        lines.append("| 信源 | α | β | 期望奖励 E[θ] | 趋势 |")
+        lines.append("|------|---|---|-------------|------|")
+        for arm in ("duckduckgo", "arxiv", "tavily"):
+            a_val = alphas.get(arm, 1.0)
+            b_val = betas.get(arm, 1.0)
+            ex = round(a_val / (a_val + b_val), 4) if (a_val + b_val) > 0 else 0.5
+            if ex > 0.6:
+                trend = "↑ 优选"
+            elif ex < 0.4:
+                trend = "↓ 降权"
+            else:
+                trend = "→ 中性"
+            lines.append(f"| {arm_display[arm]} | {a_val} | {b_val} | {ex} | {trend} |")
+        lines.append("")
+
+        # 7.2 逐轮预算分配与奖励记录
+        hist = mab_state.get("history", [])
+        if hist:
+            lines.append("### 7.2 逐轮预算分配与奖励记录")
             lines.append("")
-            lines.append("| 信源 | α | β | 期望值 E[X]=α/(α+β) |")
-            lines.append("|------|---|---|-------------------|")
-            alphas = mab_state.get("alphas", {})
-            betas = mab_state.get("betas", {})
+            for rec in hist:
+                r_id = rec.get("round", "-")
+                lines.append(f"#### 第 {r_id} 轮")
+                lines.append("")
+                lines.append("| 信源 | 观测奖励 | α（更新后）| β（更新后）| E[θ]（更新后）|")
+                lines.append("|------|---------|-----------|-----------|--------------|")
+                for arm in ("duckduckgo", "arxiv", "tavily"):
+                    r_val = rec.get("rewards", {}).get(arm)
+                    r_str = f"{r_val:.4f}" if r_val is not None else "N/A"
+                    pa = (rec.get("params_after") or {}).get(arm) or {}
+                    if pa:
+                        a_after = pa.get("alpha", "-")
+                        b_after = pa.get("beta", "-")
+                        e_after = pa.get("expected_reward", "-")
+                    else:
+                        a_after = b_after = e_after = "N/A"
+                    lines.append(f"| {arm_display[arm]} | {r_str} | {a_after} | {b_after} | {e_after} |")
+                lines.append("")
+
+        # 7.3 本轮预算对比
+        base = mab_data.get("base_budgets", {})
+        alloc = mab_data.get("allocated_budgets", {})
+        if base or alloc:
+            lines.append("### 7.3 本轮（最后一次 Researcher 调用）预算对比")
+            lines.append("")
+            lines.append("| 信源 | 基础预算（env）| MAB 分配 | 变化 |")
+            lines.append("|------|--------------|---------|------|")
+            total_base = 0
+            total_alloc = 0
             for arm in ("duckduckgo", "arxiv", "tavily"):
-                a_val = alphas.get(arm, 1)
-                b_val = betas.get(arm, 1)
-                ex = round(a_val / (a_val + b_val), 4) if (a_val + b_val) > 0 else "N/A"
-                lines.append(f"| {arm} | {a_val:.2f} | {b_val:.2f} | {ex} |")
+                b = base.get(arm, 0)
+                a = alloc.get(arm, 0)
+                diff = a - b
+                diff_str = f"+{diff}" if diff > 0 else str(diff)
+                lines.append(f"| {arm_display[arm]} | {b} | {a} | {diff_str} |")
+                total_base += b
+                total_alloc += a
+            lines.append("")
+            lines.append(
+                f"> 本轮 MAB 轮次编号: {mab_round}  "
+                f"总基础预算: {total_base}  总 MAB 预算: {total_alloc}"
+            )
             lines.append("")
 
     return "\n".join(lines)

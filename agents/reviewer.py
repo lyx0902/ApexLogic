@@ -31,7 +31,7 @@ MIN_DRAFT_LENGTH = 600
 # 四维权重
 SCORE_WEIGHTS = {"S1": 0.35, "S2": 0.25, "S3": 0.25, "S4": 0.15}
 # 通过阈值
-PASS_THRESHOLD = float(os.getenv("REVIEWER_PASS_THRESHOLD", "8.5"))
+PASS_THRESHOLD = float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
 # 强制回 Researcher 的单维阈值
 RESEARCHER_S1_THRESHOLD = 5
 RESEARCHER_S3_THRESHOLD = 4
@@ -117,11 +117,39 @@ def _extract_first_json_object(raw: str) -> str:
     return text[start:]
 
 
+def _escape_json_string_literals(text: str) -> str:
+    """将 JSON 字符串值内的字面控制字符（换行、制表等）转义，修复最常见的解析失败原因。"""
+
+    result: List[str] = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if escaped:
+            result.append(ch)
+            escaped = False
+        elif ch == "\\":
+            result.append(ch)
+            escaped = True
+        elif ch == '"':
+            result.append(ch)
+            in_string = not in_string
+        elif in_string and ch == "\n":
+            result.append("\\n")
+        elif in_string and ch == "\r":
+            result.append("\\r")
+        elif in_string and ch == "\t":
+            result.append("\\t")
+        else:
+            result.append(ch)
+    return "".join(result)
+
+
 def _sanitize_json_text(text: str) -> str:
-    """轻量修复常见 JSON 格式问题（尾逗号、BOM）。"""
+    """轻量修复常见 JSON 格式问题（尾逗号、BOM、字符串内控制字符）。"""
 
     cleaned = text.strip().lstrip("\ufeff")
     cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
+    cleaned = _escape_json_string_literals(cleaned)
     return cleaned
 
 
