@@ -23,6 +23,7 @@ from bge.reranker import rerank_top_k
 from tools.arxiv_tool import arxiv_search
 from tools.search_tool import duckduckgo_search, tavily_search
 from optim.mab_search import ThompsonSamplingMAB, compute_source_rewards
+from optim.graph_expand import expand_queries_from_contexts
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -445,6 +446,38 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     normalized_contexts = _dedupe_and_index_contexts(contexts)
 
+    # ── 图扩展查询：从已检索文档构建概念共现图，补搜核心概念方向 ──────
+    graph_expand_k = int(os.getenv("GRAPH_EXPAND_QUERIES", "2"))
+    graph_expand_summary: Dict[str, Any] = {"enabled": False, "extra_queries": [], "extra_contexts": 0}
+    if graph_expand_k > 0 and normalized_contexts:
+        try:
+            extra_queries = expand_queries_from_contexts(
+                topic=topic,
+                contexts=normalized_contexts,
+                top_k=graph_expand_k,
+                existing_queries=effective_queries,
+            )
+            if extra_queries:
+                # 用 DDG 对扩展查询各搜少量结果（每条 3 条），不走 MAB 分配
+                extra_contexts: List[Dict[str, Any] | str] = []
+                for eq in extra_queries:
+                    try:
+                        got = duckduckgo_search(eq, max_results=3)
+                        extra_contexts.extend(got)
+                    except Exception as exc:
+                        errors = _append_error(errors, f"图扩展查询 DDG 失败: {exc}")
+                if extra_contexts:
+                    merged = _dedupe_and_index_contexts(list(contexts) + list(extra_contexts))
+                    normalized_contexts = merged
+                graph_expand_summary = {
+                    "enabled": True,
+                    "extra_queries": extra_queries,
+                    "extra_contexts": len(extra_contexts) if extra_contexts else 0,
+                    "total_after_merge": len(normalized_contexts),
+                }
+        except Exception as exc:
+            errors = _append_error(errors, f"图扩展查询失败，已跳过: {exc}")
+
     retriever_top_k = int(os.getenv("BGE_RETRIEVER_TOP_K", "20"))
     reranker_top_k = int(os.getenv("BGE_RERANKER_TOP_K", "10"))
 
@@ -533,6 +566,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
                 "expected_rewards_after": mab.expected_rewards(),
                 "round": mab.round,
             },
+            # 图扩展查询摘要
+            "graph_expand": graph_expand_summary,
         }
     )
 
@@ -553,6 +588,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "errors": len(errors),
             "mab_budgets": mab_budgets,
             "mab_expected_rewards": mab.expected_rewards(),
+            "graph_expand": graph_expand_summary,
         }
     )
 

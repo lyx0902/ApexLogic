@@ -1,6 +1,6 @@
 # ApexLogic Deep Research Multi-Agent
 
-基于 `LangGraph` 的深度研究多智能体系统，采用 `Researcher -> Writer -> Reviewer` 循环流程，支持 BGE 语义检索筛选、结构化评审与多格式报告导出。
+基于 `LangGraph` 的深度研究多智能体系统，采用 `Researcher -> Writer -> Reviewer` 循环流程，支持 MAB 自适应检索预算、图扩展查询、BGE 语义精排、四维量化评审与多格式报告导出。
 
 ## 1. 项目目标
 
@@ -12,11 +12,13 @@
 
 - `core/state.py`：定义全局状态 `ResearchState` 与初始化函数。
 - `core/graph.py`：构建 `StateGraph`，配置节点与条件路由。
-- `agents/researchers.py`：检索代理，负责查询词、广搜、去重、BGE 两阶段筛选。
+- `agents/researchers.py`：检索代理，负责查询词生成、MAB 预算分配、广搜、去重、图扩展、BGE 两阶段筛选。
 - `agents/writer.py`：写作代理，基于上下文与评审反馈生成/修订草稿。
-- `agents/reviewer.py`：评审代理，优先 LLM 结构化评审，失败回退规则评审。
+- `agents/reviewer.py`：评审代理，四维量化打分（S1-S4），优先 LLM 评审，失败回退规则评审。
 - `bge/retriever.py`：向量召回（粗筛，默认 top20）。
 - `bge/reranker.py`：重排序（精排，默认 top10）。
+- `optim/mab_search.py`：Thompson Sampling MAB，自适应分配三路检索预算。
+- `optim/graph_expand.py`：图扩展查询，从已检索文档构建共现图，补搜核心概念方向。
 - `tools/search_tool.py`：DDG + Tavily 搜索封装。
 - `tools/arxiv_tool.py`：ArXiv 检索封装（含多轮回退查询策略）。
 - `prompts/system_prompts.py`：三类 Agent 的系统提示词与用户提示词构造。
@@ -30,18 +32,18 @@
 
 1. **初始化状态**
    - 使用 `create_initial_state(topic, output_mode)` 创建初始状态。
-   - 关键字段包含：`topic`、`search_queries`、`retrieved_context`、`draft`、`review_result`、`execution_trace`、`errors` 等。
+   - 关键字段包含：`topic`、`search_queries`、`retrieved_context`、`draft`、`review_result`、`execution_trace`、`errors`、`mab_state` 等。
 
 2. **Researcher 节点（检索与筛选）**
    - 先生成基础查询词；如有 `critique_feedback` / `revision_directives`，会补充定向检索词。
    - 若配置了 DeepSeek，优先做查询词重写（失败自动回退规则查询词）。
-   - 按每轮总配额广搜（默认）：
-     - `DDG_TOTAL_RESULTS=35`
-     - `ARXIV_TOTAL_RESULTS=20`
-     - `TAVILY_TOTAL_RESULTS=5`
-   - 三路结果统一去重、标准化后，进入 BGE 两阶段筛选：
+   - **MAB 自适应预算**：根据各来源历史表现（Thompson Sampling），动态调整本轮三路检索配额（默认基础配额 DDG=35 / ArXiv=20 / Tavily=5）。
+   - 三路广搜结果统一去重、标准化。
+   - **图扩展查询**：从去重后的候选文档提取核心共现概念，生成补充查询，用 DDG 补搜后合并回候选池（通过环境变量 `GRAPH_EXPAND_QUERIES` 控制扩展条数，默认 2）。
+   - 进入 BGE 两阶段筛选：
      - Retriever：top20
      - Reranker：top10
+   - MAB 依据最终精排结果更新各来源的奖励参数，供下轮参考。
    - 最终上下文写入 `retrieved_context`，并连续编号 `citation_id`（`S1...`）。
 
 3. **Writer 节点（生成/修订草稿）**
@@ -50,9 +52,15 @@
    - 迭代时基于 `revision_directives.must_fix` 做定向修订。
    - 输出 `feedback_paragraph_mapping`（问题到段落映射）用于 debug 可追踪。
 
-4. **Reviewer 节点（结构化评审）**
-   - 评审维度：事实、逻辑、信息缺口、争议点与证据裁决。
-   - 期望输出结构化 JSON：`is_satisfactory`、`needs_more_research`、`fact_issues`、`logic_issues`、`info_gaps` 等。
+4. **Reviewer 节点（四维量化评审）**
+   - 将 top-10 原始来源文本传给 LLM，逐条核查引用是否有真实依据。
+   - 四个评审维度：
+     - S1 事实准确性（权重 35%）
+     - S2 逻辑完整性（权重 25%）
+     - S3 信息覆盖广度（权重 25%）
+     - S4 结论可执行性（权重 15%）
+   - 加权总分 ≥ 8.0 视为通过（可通过 `REVIEWER_PASS_THRESHOLD` 调整）。
+   - 输出结构化 JSON：`scores`、`weighted_score`、`is_satisfactory`、`needs_more_research`、`fact_issues`、`logic_issues`、`info_gaps`、`citation_checks`、`supporter`、`skeptic`、`evidence_verdicts` 等。
    - 如果模型输出不可解析，自动回退到规则评审，保证流程不中断。
 
 5. **条件路由与循环终止**
@@ -62,8 +70,8 @@
 
 6. **导出阶段**
    - `user`：正文 + 参考文献。
-   - `debug`：元信息 + 正文 + 评审 + 历史 + 执行轨迹 + 错误。
-   - `both`：一次运行输出 `user/debug` 两份 Markdown，并额外输出 BGE 明细 JSON。
+   - `debug`：元信息 + 评审（四维评分表、引用核查、支持/质疑观点）+ 迭代历史 + 执行轨迹 + 错误记录 + MAB 预算分配记录 + 图扩展查询摘要。
+   - `both`：一次运行输出 `user/debug` 两份 Markdown，并额外输出 BGE 明细 JSON（含图扩展数据）。
 
 ## 4. 安装与环境配置
 
@@ -90,6 +98,8 @@ pip install -r requirements.txt
 - `SEARCH_QUERY_BUDGET`（默认 `3`）
 - `DDG_TOTAL_RESULTS` / `ARXIV_TOTAL_RESULTS` / `TAVILY_TOTAL_RESULTS`（默认 `35/20/5`）
 - `BGE_RETRIEVER_TOP_K` / `BGE_RERANKER_TOP_K`（默认 `20/10`）
+- `GRAPH_EXPAND_QUERIES`（默认 `2`，设为 `0` 可关闭图扩展）
+- `REVIEWER_PASS_THRESHOLD`（默认 `8.0`）
 - `ARXIV_SYNONYM_FILE`（可选，同义词词典文件路径）
 
 兼容变量：
@@ -144,32 +154,25 @@ python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能�
 
 ### 6.2 `*-debug.md`
 
-- 面向调试与评估。
-- 包含运行元信息、评审反馈、迭代历史、执行轨迹、错误记录。
-- 不包含 BGE 全量逐条明细（这些放在 JSON）。
+- 面向调试与评估，包含以下各节：
+  1. 运行元信息（迭代轮次、评审模式、BGE 统计）
+  2. 评审结果（四维评分表、综合反馈、事实/逻辑问题、引用核查、支持与质疑观点）
+  3. 每轮草稿与评审历史
+  4. 参考上下文摘录
+  5. 执行轨迹
+  6. 错误与降级记录
+  7. MAB 自适应检索预算（各来源 α/β 参数、逐轮预算对比）
+  8. 图扩展查询（扩展查询列表、新增文档数、合并后总数）
 
 ### 6.3 `*-bge-details.json`（仅 `both` 模式）
 
-- 包含本轮 BGE 过程的结构化明细：
+- 包含本轮检索过程的结构化明细：
   - 广搜配额统计（targets/attempted/fetched）
+  - MAB 本轮预算分配与历史参数
+  - 图扩展查询及对应检索到的原始文档（`graph_expand.extra_contexts`）
   - Retriever 记录（selected/dropped）
   - Reranker 记录（selected/dropped）
   - 每条记录含 `query/url/title/score/reason/timestamp` 等字段
-
-示例片段：
-
-```json
-{
-  "rank": 1,
-  "title": "中美GDP差距再次缩小！25年中国GDP达20万亿美元，占美国 ... - 网易",
-  "source": "tavily",
-  "url": "https://www.163.com/dy/article/KJUUQ2L5055651K3.html",
-  "score": 0.780851,
-  "reason": "selected_top_k",
-  "timestamp": "2026-03-19T15:28:21",
-  "query": "2025年中国和美国GDP细分领域对比\n年中国与美国GDP构成预测：消费、投资、净出口占比对比\n中美产业结构对比 2025：制造业、服务业、数字经济增加值\n年中美GDP细分领域增长驱动力分析：科技创新与投资"
-}
-```
 
 ## 7. ArXiv 检索机制（通用增强版）
 
@@ -191,16 +194,20 @@ python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能�
 - 未配置 LLM Key 时，Writer/Reviewer 启用本地回退逻辑，保证图可运行。
 - Reviewer 输出非 JSON 时，会做解析修复与规则化兜底，避免链路中断。
 - 广搜三路配额若都被配置成 0，会自动回退默认配额。
+- `networkx` 未安装或候选文档为空时，图扩展模块静默跳过，不影响主流程。
 
 ## 9. 调试建议
 
 - 先看 `debug` 报告中的：
   - `BGE Provider 统计`
   - `BGE Retriever/Reranker` 输入输出条数
+  - `MAB 自适应检索预算` 各来源期望奖励趋势
+  - `图扩展查询` 是否生成了有效补充方向
   - `错误与降级记录`
 - 再看 `*-bge-details.json`：
   - 检查 `selected_records` 是否主题相关
   - 对比 `dropped_records` 与 `selected_records` 的分数分布
+  - 查看 `graph_expand.extra_contexts` 评估图扩展文档质量
 
 ## 10. 快速自检
 
@@ -214,4 +221,3 @@ python export_report.py --topic "评测agent性能的几种常见benchmark概述
 - 不要把真实密钥提交到仓库。
 - `.env.example` 只放占位值。
 - 建议将报告与日志输出目录纳入版本管理策略（如按需 `.gitignore`）。
-

@@ -438,6 +438,24 @@ def _render_markdown_debug(state: ResearchState) -> str:
             )
             lines.append("")
 
+    # ── 图扩展查询摘要 ──────────────────────────────────────────────
+    graph_expand = bge_summary.get("graph_expand", {}) or {}
+    if graph_expand:
+        lines.append("")
+        lines.append("## 8. 图扩展查询（Graph Query Expansion）")
+        lines.append("")
+        enabled = graph_expand.get("enabled", False)
+        lines.append(f"- 启用状态: {'✅ 已启用' if enabled else '❌ 未启用（networkx 缺失或无候选文档）'}")
+        if enabled:
+            extra_queries = graph_expand.get("extra_queries", [])
+            lines.append(f"- 扩展查询数: {len(extra_queries)}")
+            if extra_queries:
+                lines.append("- 扩展查询列表:")
+                for eq in extra_queries:
+                    lines.append(f"  - {eq}")
+            lines.append(f"- DDG 扩展检索新增文档数: {graph_expand.get('extra_contexts', 0)}")
+            lines.append(f"- 合并后去重候选总数: {graph_expand.get('total_after_merge', 0)}")
+
     return "\n".join(lines)
 
 
@@ -501,6 +519,22 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
     bge_summary_mab = bge_summary.get("mab", {}) or {}
     mab_state_payload = state.get("mab_state", {}) or {}
 
+    graph_expand = bge_summary.get("graph_expand", {}) or {}
+    graph_expand_contexts: List[Dict[str, object]] = []
+    if graph_expand.get("enabled"):
+        # 从 retrieved_context 中找出 citation_id 超过原始 dedup_total 的记录
+        # 即图扩展合并后新增的文档（排在原候选之后）
+        orig_count = bge_summary.get("dedup_total", 0) - graph_expand.get("extra_contexts", 0)
+        for item in state.get("retrieved_context", []):
+            if isinstance(item, dict):
+                cid = item.get("citation_id", "")
+                try:
+                    idx = int(cid.lstrip("S"))
+                    if idx > orig_count:
+                        graph_expand_contexts.append(item)
+                except (ValueError, AttributeError):
+                    pass
+
     return {
         "topic": state.get("topic", ""),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -508,6 +542,13 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
         "mab": {
             "state": mab_state_payload,
             "last_round": bge_summary_mab,
+        },
+        "graph_expand": {
+            "enabled": graph_expand.get("enabled", False),
+            "extra_queries": graph_expand.get("extra_queries", []),
+            "extra_contexts_count": graph_expand.get("extra_contexts", 0),
+            "total_after_merge": graph_expand.get("total_after_merge", 0),
+            "extra_contexts": graph_expand_contexts,
         },
         "bge": {
             "broad_targets": bge_summary.get("broad_targets", {}),
