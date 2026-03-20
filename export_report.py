@@ -109,7 +109,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
     weighted = review.get("weighted_score")
     if weighted is not None:
-        lines.append(f"- 评审加权总分: {weighted:.2f} / 10.00（通过阈值 7.0）")
+        lines.append(f"- 评审加权总分: {weighted:.2f} / 10.00（通过阈值 8.0）")
         scores = review.get("scores", {})
         if scores:
             lines.append(
@@ -169,7 +169,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
             contrib = round(float(s) * w, 2) if isinstance(s, (int, float)) else "?"
             rationale = str(score_rationale.get(dim, "")).replace("|", "｜")[:60]
             lines.append(f"| {dim} {label} | {s}/10 | {int(w*100)}% | {contrib} | {rationale} |")
-        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: 7.5 |" if weighted is not None else "")
+        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: 8.0 |" if weighted is not None else "")
         verdict = "✅ 通过" if review.get("is_satisfactory") else "❌ 未通过"
         lines.append(f"| **评审结论** | {verdict} | — | — | — |")
         lines.append("")
