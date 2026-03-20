@@ -107,7 +107,19 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append(f"- 是否通过评审: {state.get('is_satisfactory', False)}")
     lines.append(f"- 下一路由建议: {state.get('next_route', '')}")
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
-    lines.append(f"- 评审置信度: {review.get('confidence', 'N/A')}")
+    weighted = review.get("weighted_score")
+    if weighted is not None:
+        lines.append(f"- 评审加权总分: {weighted:.2f} / 10.00（通过阈值 7.0）")
+        scores = review.get("scores", {})
+        if scores:
+            lines.append(
+                f"- 各维度得分: S1事实={scores.get('S1','?')} "
+                f"S2逻辑={scores.get('S2','?')} "
+                f"S3覆盖={scores.get('S3','?')} "
+                f"S4执行={scores.get('S4','?')}"
+            )
+    else:
+        lines.append(f"- 评审置信度: {review.get('confidence', 'N/A')}")
     lines.append(f"- 输出模式: {state.get('output_mode', 'debug')}")
     if bge_summary:
         lines.append(f"- BGE 广搜目标总量: {sum((bge_summary.get('broad_targets', {}) or {}).values())}")
@@ -135,16 +147,39 @@ def _render_markdown_debug(state: ResearchState) -> str:
             lines.append(f"- BGE 配置快照: {bge_config}")
     lines.append("")
 
-    lines.append("## 2. 研究正文")
-    lines.append("")
-    lines.append(report if report else "(未生成正文)")
+    lines.append("## 2. 评审结果（四维量化评分）")
     lines.append("")
 
-    lines.append("## 3. 评审反馈")
+    scores = review.get("scores", {})
+    weighted = review.get("weighted_score")
+    score_rationale = review.get("score_rationale", {}) or {}
+    if scores:
+        lines.append("### 2.1 评分总览")
+        lines.append("")
+        lines.append("| 维度 | 得分 | 权重 | 加权贡献 | 评分理由 |")
+        lines.append("|------|------|------|---------|---------|")
+        dim_meta = [
+            ("S1", "事实准确性", 0.35),
+            ("S2", "逻辑完整性", 0.25),
+            ("S3", "信息覆盖广度", 0.25),
+            ("S4", "结论可执行性", 0.15),
+        ]
+        for dim, label, w in dim_meta:
+            s = scores.get(dim, "?")
+            contrib = round(float(s) * w, 2) if isinstance(s, (int, float)) else "?"
+            rationale = str(score_rationale.get(dim, "")).replace("|", "｜")[:60]
+            lines.append(f"| {dim} {label} | {s}/10 | {int(w*100)}% | {contrib} | {rationale} |")
+        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: 7.0 |" if weighted is not None else "")
+        verdict = "✅ 通过" if review.get("is_satisfactory") else "❌ 未通过"
+        lines.append(f"| **评审结论** | {verdict} | — | — | — |")
+        lines.append("")
+
+    lines.append("### 2.2 综合反馈")
     lines.append("")
     lines.append(review.get("critique_feedback", state.get("critique_feedback", "")) or "(无)")
     lines.append("")
-    lines.append("### 3.1 fact_issues（事实问题）")
+
+    lines.append("### 2.3 事实问题（fact_issues）")
     fact_issues = review.get("fact_issues", []) or []
     if fact_issues:
         lines.extend([f"- {item}" for item in fact_issues])
@@ -152,7 +187,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("### 3.2 logic_issues（逻辑问题）")
+    lines.append("### 2.4 逻辑问题（logic_issues）")
     logic_issues = review.get("logic_issues", []) or []
     if logic_issues:
         lines.extend([f"- {item}" for item in logic_issues])
@@ -160,7 +195,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("### 3.3 info_gaps（信息缺口）")
+    lines.append("### 2.5 信息缺口（info_gaps）")
     info_gaps = review.get("info_gaps", []) or []
     if info_gaps:
         lines.extend([f"- {item}" for item in info_gaps])
@@ -168,10 +203,27 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("### 3.4 内部辩论与证据裁决")
+    lines.append("### 2.6 引用核查（citation_checks）")
+    citation_checks = review.get("citation_checks", []) or []
+    if citation_checks:
+        lines.append("")
+        lines.append("| 引用ID | 声明片段 | 是否有原文支撑 | 原文证据 |")
+        lines.append("|--------|---------|--------------|---------|")
+        for cc in citation_checks:
+            if not isinstance(cc, dict):
+                continue
+            cid = cc.get("citation_id", "?")
+            claim = str(cc.get("claim", "")).replace("|", "｜")[:60]
+            supported = "✅ 支撑" if cc.get("supported") else "❌ 未找到"
+            evidence = str(cc.get("evidence", "")).replace("|", "｜")[:80]
+            lines.append(f"| {cid} | {claim} | {supported} | {evidence} |")
+    else:
+        lines.append("- 无引用核查记录（规则回退模式或模型未输出）")
+    lines.append("")
+
+    lines.append("### 2.7 支持与质疑观点")
     supporter = review.get("supporter", {}) or {}
     skeptic = review.get("skeptic", {}) or {}
-    judge = review.get("judge", {}) or {}
     lines.append("- 支持者观点:")
     strengths = supporter.get("strengths", []) or []
     if strengths:
@@ -184,8 +236,6 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.extend([f"  - {item}" for item in critical])
     else:
         lines.append("  - 无")
-    lines.append(f"- 裁判结论: {judge.get('decision', '')}")
-    lines.append(f"- 裁判依据: {judge.get('rationale', '')}")
     lines.append("- 争议点:")
     controversy_points = review.get("controversy_points", []) or []
     if controversy_points:
@@ -211,11 +261,11 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("  - 无")
     lines.append("")
 
-    lines.append("## 4. 每轮草稿与评审历史")
+    lines.append("## 3. 每轮草稿与评审历史")
     lines.append("")
     for item in history:
         round_id = item.get("round", "-")
-        lines.append(f"### 4.{round_id} 第 {round_id} 轮")
+        lines.append(f"### 3.{round_id} 第 {round_id} 轮")
         lines.append("")
         lines.append("- 草稿片段:")
         draft_text = str(item.get("draft", "")).strip()
@@ -227,6 +277,14 @@ def _render_markdown_debug(state: ResearchState) -> str:
         mapping = item.get("feedback_paragraph_mapping", []) or []
         lines.append("- 评审结论:")
         lines.append(f"  - is_satisfactory: {item.get('is_satisfactory', False)}")
+        r_scores = review_item.get("scores", {})
+        r_weighted = review_item.get("weighted_score")
+        if r_scores and r_weighted is not None:
+            lines.append(
+                f"  - 加权总分: {r_weighted:.2f}/10  "
+                f"(S1={r_scores.get('S1','?')} S2={r_scores.get('S2','?')} "
+                f"S3={r_scores.get('S3','?')} S4={r_scores.get('S4','?')})"
+            )
         lines.append(f"  - next_route: {item.get('next_route', '')}")
         lines.append(f"  - critique_feedback: {review_item.get('critique_feedback', '')}")
         lines.append("")
@@ -266,7 +324,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("## 5. 参考上下文摘录")
+    lines.append("## 4. 参考上下文摘录")
     lines.append("")
     for item in contexts[:12]:
         if isinstance(item, dict):
@@ -283,7 +341,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("## 6. 执行轨迹")
+    lines.append("## 5. 执行轨迹")
     lines.append("")
     for idx, item in enumerate(trace, start=1):
         lines.append(f"{idx}. {item}")
@@ -291,12 +349,52 @@ def _render_markdown_debug(state: ResearchState) -> str:
         lines.append("- 无")
     lines.append("")
 
-    lines.append("## 7. 错误与降级记录")
+    lines.append("## 6. 错误与降级记录")
     lines.append("")
     if errors:
         lines.extend([f"- {item}" for item in errors])
     else:
         lines.append("- 无")
+
+    # ── MAB 自适应检索预算 ──────────────────────────────────────────
+    mab_data = bge_summary.get("mab", {}) or {}
+    if mab_data:
+        lines.append("")
+        lines.append("## 7. MAB 自适应检索预算（Thompson Sampling）")
+        lines.append("")
+        base = mab_data.get("base_budgets", {})
+        alloc = mab_data.get("allocated_budgets", {})
+        rewards = mab_data.get("rewards", {})
+        exp_rewards = mab_data.get("expected_rewards_after", {})
+        mab_round = mab_data.get("round", "-")
+        lines.append(f"- 当前轮次: {mab_round}")
+        lines.append("")
+        lines.append("| 信源 | 基础配额 | 本轮分配 | 本轮奖励 | 期望奖励(更新后) |")
+        lines.append("|------|---------|---------|---------|----------------|")
+        for arm in ("duckduckgo", "arxiv", "tavily"):
+            b = base.get(arm, "-")
+            a = alloc.get(arm, "-")
+            r = rewards.get(arm)
+            r_str = f"{r:.4f}" if r is not None else "N/A"
+            e = exp_rewards.get(arm)
+            e_str = f"{e:.4f}" if e is not None else "N/A"
+            lines.append(f"| {arm} | {b} | {a} | {r_str} | {e_str} |")
+        lines.append("")
+
+        mab_state = state.get("mab_state", {}) or {}
+        if mab_state:
+            lines.append("**Beta 分布参数（α, β）**")
+            lines.append("")
+            lines.append("| 信源 | α | β | 期望值 E[X]=α/(α+β) |")
+            lines.append("|------|---|---|-------------------|")
+            alphas = mab_state.get("alphas", {})
+            betas = mab_state.get("betas", {})
+            for arm in ("duckduckgo", "arxiv", "tavily"):
+                a_val = alphas.get(arm, 1)
+                b_val = betas.get(arm, 1)
+                ex = round(a_val / (a_val + b_val), 4) if (a_val + b_val) > 0 else "N/A"
+                lines.append(f"| {arm} | {a_val:.2f} | {b_val:.2f} | {ex} |")
+            lines.append("")
 
     return "\n".join(lines)
 
@@ -358,10 +456,17 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
             enriched.append(item)
         return enriched
 
+    bge_summary_mab = bge_summary.get("mab", {}) or {}
+    mab_state_payload = state.get("mab_state", {}) or {}
+
     return {
         "topic": state.get("topic", ""),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "search_queries": state.get("search_queries", []),
+        "mab": {
+            "state": mab_state_payload,
+            "last_round": bge_summary_mab,
+        },
         "bge": {
             "broad_targets": bge_summary.get("broad_targets", {}),
             "quota_source": bge_summary.get("quota_source", {}),

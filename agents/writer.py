@@ -94,19 +94,13 @@ def _build_feedback_mapping(draft: str, revision_directives: Dict[str, Any]) -> 
     return mapping
 
 
-def _build_context_snippet(retrieved_context: List[Dict[str, Any] | str]) -> str:
-    """提取用于分段生成的上下文摘要。"""
-
-    chunks: List[str] = []
-    for idx, item in enumerate(retrieved_context[:8], start=1):
-        if isinstance(item, dict):
-            citation = item.get("citation_id", f"S{idx}")
-            title = item.get("title", f"source-{idx}")
-            content = str(item.get("content", ""))[:360]
-            chunks.append(f"[{citation}] {title}: {content}")
-        else:
-            chunks.append(f"[S{idx}] {str(item)[:360]}")
-    return "\n".join(chunks)
+def _get_previous_draft(state: Any) -> str:
+    """从迭代历史中取最近一轮草稿，供修订时参考。"""
+    history = list(state.get("iteration_history", []) or [])
+    if not history:
+        return ""
+    last = history[-1]
+    return str(last.get("draft", "") or "")
 
 
 def _generate_draft_with_llm(
@@ -116,6 +110,7 @@ def _generate_draft_with_llm(
     critique_feedback: str,
     retrieved_context: List[Dict[str, Any] | str],
     revision_directives: Dict[str, Any],
+    previous_draft: str = "",
 ) -> str:
     """调用 LLM 生成整篇草稿。"""
 
@@ -125,6 +120,7 @@ def _generate_draft_with_llm(
         critique_feedback=critique_feedback,
         retrieved_context=retrieved_context,
         revision_directives=revision_directives,
+        previous_draft=previous_draft,
     )
 
     response = llm.invoke(
@@ -215,7 +211,6 @@ def writer_node(state: ResearchState) -> Dict[str, Any]:
             temperature=0.3,
         )
 
-        _ = _build_context_snippet(retrieved_context)
         draft = _generate_draft_with_llm(
             llm=llm,
             topic=topic,
@@ -223,6 +218,7 @@ def writer_node(state: ResearchState) -> Dict[str, Any]:
             critique_feedback=critique_feedback,
             retrieved_context=retrieved_context,
             revision_directives=revision_directives,
+            previous_draft=_get_previous_draft(state),
         )
         if not draft:
             draft = _fallback_draft(topic, revision_step, critique_feedback, retrieved_context)

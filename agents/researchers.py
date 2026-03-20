@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:
     from core.state import ResearchState
@@ -22,6 +22,7 @@ from bge.retriever import retrieve_top_k
 from bge.reranker import rerank_top_k
 from tools.arxiv_tool import arxiv_search
 from tools.search_tool import duckduckgo_search, tavily_search
+from optim.mab_search import ThompsonSamplingMAB, compute_source_rewards
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -64,6 +65,8 @@ def _rewrite_queries_with_llm(
     topic: str,
     critique_feedback: str,
     seed_queries: List[str],
+    revision_directives: Optional[Dict[str, Any]] = None,
+    revision_step: int = 0,
 ) -> List[str]:
     """可选使用 DeepSeek 重写检索词，提升针对性。"""
 
@@ -83,7 +86,9 @@ def _rewrite_queries_with_llm(
         base_url=deepseek_base_url,
         temperature=0.2,
     )
-    user_prompt = build_researcher_user_prompt(topic, critique_feedback)
+    user_prompt = build_researcher_user_prompt(
+        topic, critique_feedback, revision_directives=revision_directives, revision_step=revision_step
+    )
     response = llm.invoke(
         [
             ("system", RESEARCHER_SYSTEM_PROMPT),
@@ -249,14 +254,8 @@ def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dic
     return unique
 
 
-def _collect_broad_contexts(
-    queries: List[str],
-    errors: List[str],
-) -> tuple[List[Dict[str, Any] | str], List[str], Dict[str, Any]]:
-    """按总配额执行广搜，避免按 query 乘法膨胀请求量。"""
-
-    contexts: List[Dict[str, Any] | str] = []
-    q_count = max(len(queries), 1)
+def _resolve_base_budgets(q_count: int) -> tuple[Dict[str, int], Dict[str, str]]:
+    """从环境变量解析三个搜索源的基础预算，返回预算与来源标记。"""
 
     def _resolve_total(
         total_key: str,
@@ -274,9 +273,43 @@ def _collect_broad_contexts(
 
         return default_total, "default"
 
-    ddg_total, ddg_source = _resolve_total("DDG_TOTAL_RESULTS", "DDG_RESULTS_PER_QUERY", 35)
-    arxiv_total, arxiv_source = _resolve_total("ARXIV_TOTAL_RESULTS", "ARXIV_RESULTS_PER_QUERY", 20)
-    tavily_total, tavily_source = _resolve_total("TAVILY_TOTAL_RESULTS", "TAVILY_RESULTS_PER_QUERY", 5)
+    ddg_total, ddg_src = _resolve_total("DDG_TOTAL_RESULTS", "DDG_RESULTS_PER_QUERY", 35)
+    arxiv_total, arxiv_src = _resolve_total("ARXIV_TOTAL_RESULTS", "ARXIV_RESULTS_PER_QUERY", 20)
+    tavily_total, tavily_src = _resolve_total("TAVILY_TOTAL_RESULTS", "TAVILY_RESULTS_PER_QUERY", 5)
+
+    budgets = {"duckduckgo": ddg_total, "arxiv": arxiv_total, "tavily": tavily_total}
+    sources = {"duckduckgo": ddg_src, "arxiv": arxiv_src, "tavily": tavily_src}
+    return budgets, sources
+
+
+def _collect_broad_contexts(
+    queries: List[str],
+    errors: List[str],
+    override_budgets: Optional[Dict[str, int]] = None,
+) -> tuple[List[Dict[str, Any] | str], List[str], Dict[str, Any]]:
+    """按总配额执行广搜，避免按 query 乘法膨胀请求量。
+
+    override_budgets: 若由 MAB 提供，则使用该预算覆盖环境变量配置。
+    """
+
+    contexts: List[Dict[str, Any] | str] = []
+    q_count = max(len(queries), 1)
+
+    base_budgets, quota_sources = _resolve_base_budgets(q_count)
+
+    if override_budgets is not None:
+        # 使用 MAB 调整后的预算，来源标记为 mab
+        ddg_total = override_budgets.get("duckduckgo", base_budgets["duckduckgo"])
+        arxiv_total = override_budgets.get("arxiv", base_budgets["arxiv"])
+        tavily_total = override_budgets.get("tavily", base_budgets["tavily"])
+        ddg_source = arxiv_source = tavily_source = "mab"
+    else:
+        ddg_total = base_budgets["duckduckgo"]
+        arxiv_total = base_budgets["arxiv"]
+        tavily_total = base_budgets["tavily"]
+        ddg_source = quota_sources["duckduckgo"]
+        arxiv_source = quota_sources["arxiv"]
+        tavily_source = quota_sources["tavily"]
 
     # 兼容异常配置：若三路总配额全为 0，则回退默认值，避免整轮直接占位符。
     if ddg_total + arxiv_total + tavily_total == 0:
@@ -358,14 +391,18 @@ def _collect_broad_contexts(
 def researcher_node(state: ResearchState) -> Dict[str, Any]:
     """检索代理节点。
 
-    输入: topic / critique_feedback
-    输出: search_queries / retrieved_context / errors
+    输入: topic / critique_feedback / mab_state
+    输出: search_queries / retrieved_context / errors / mab_state
     """
 
     topic = state.get("topic", "")
     critique_feedback = state.get("critique_feedback", "")
     revision_directives = dict(state.get("revision_directives", {}) or {})
     errors = list(state.get("errors", []))
+
+    # ── MAB：恢复或初始化 ──────────────────────────────────────────────
+    mab_raw = state.get("mab_state") or {}
+    mab = ThompsonSamplingMAB.from_dict(mab_raw) if mab_raw else ThompsonSamplingMAB()
 
     seed_queries = _build_queries(
         topic=topic,
@@ -375,14 +412,25 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     queries = list(seed_queries)
 
     try:
-        queries = _rewrite_queries_with_llm(topic, critique_feedback, seed_queries)
+        queries = _rewrite_queries_with_llm(
+            topic, critique_feedback, seed_queries,
+            revision_directives=revision_directives,
+            revision_step=state.get("revision_step", 0),
+        )
     except Exception as exc:
         errors = _append_error(errors, f"DeepSeek 查询重写失败，已使用规则检索词: {exc}")
 
     query_budget = int(os.getenv("SEARCH_QUERY_BUDGET", "3"))
     effective_queries = queries[:query_budget]
 
-    contexts, errors, bge_stage_summary = _collect_broad_contexts(effective_queries, errors)
+    # ── MAB：从环境变量获取基础预算，Thompson Sampling 分配本轮预算 ───
+    q_count = max(len(effective_queries), 1)
+    base_budgets, _ = _resolve_base_budgets(q_count)
+    mab_budgets = mab.allocate_budgets(base_budgets)
+
+    contexts, errors, bge_stage_summary = _collect_broad_contexts(
+        effective_queries, errors, override_budgets=mab_budgets
+    )
 
     # 确保在无外部依赖时流程仍然有上下文可用
     if not contexts:
@@ -464,6 +512,11 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     dropped_count = max(len(normalized_contexts) - len(filtered_contexts), 0)
 
+    # ── MAB：计算各信源奖励并更新 Beta 参数 ──────────────────────────
+    mab_rewards = compute_source_rewards(filtered_contexts, mab_budgets)
+    mab.update(mab_rewards)
+    updated_mab_state = mab.to_dict()
+
     bge_stage_summary.update(
         {
             "config": bge_config_snapshot,
@@ -472,6 +525,14 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "reranker": reranker_summary,
             "dropped": dropped_count,
             "final_contexts": len(filtered_contexts),
+            # MAB 本轮摘要，便于 debug 报告可视化
+            "mab": {
+                "base_budgets": base_budgets,
+                "allocated_budgets": mab_budgets,
+                "rewards": {k: (round(v, 4) if v is not None else None) for k, v in mab_rewards.items()},
+                "expected_rewards_after": mab.expected_rewards(),
+                "round": mab.round,
+            },
         }
     )
 
@@ -490,6 +551,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "contexts": len(filtered_contexts),
             "dropped": dropped_count,
             "errors": len(errors),
+            "mab_budgets": mab_budgets,
+            "mab_expected_rewards": mab.expected_rewards(),
         }
     )
 
@@ -499,5 +562,6 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         "source_quality_summary": source_quality_summary,
         "errors": errors,
         "execution_trace": trace,
+        "mab_state": updated_mab_state,
     }
 

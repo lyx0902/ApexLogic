@@ -25,7 +25,7 @@ class ResearchState(ResearchStateCore, total=False):
 
     # Reviewer 给出的下一跳建议：end / researcher / writer
     next_route: str
-    # 是否判定为“信息不足”，用于区分回到 Researcher 还是 Writer
+    # 是否判定为"信息不足"，用于区分回到 Researcher 还是 Writer
     needs_more_research: bool
     # 最终报告（通常与 draft 一致，或为后处理结果）
     final_report: str
@@ -45,6 +45,8 @@ class ResearchState(ResearchStateCore, total=False):
     source_quality_summary: Dict[str, Any]
     # 报告输出模式：user(面向读者) / debug(含系统细节)
     output_mode: Literal["user", "debug"]
+    # MAB（多臂赌博机）参数状态，跨迭代持久化，驱动自适应检索预算分配
+    mab_state: Dict[str, Any]
 
 
 def create_initial_state(
@@ -71,16 +73,16 @@ def create_initial_state(
         "feedback_paragraph_mapping": [],
         "source_quality_summary": {},
         "output_mode": output_mode,
+        "mab_state": {},
     }
 
 
 def merge_state(base: ResearchState, patch: Dict[str, Any]) -> ResearchState:
     """合并状态更新片段，返回新的状态字典。
 
-    该函数便于在节点实现中保持“输入不可变、输出新状态”风格。
+    该函数便于在节点实现中保持"输入不可变、输出新状态"风格。
     """
 
     merged: ResearchState = cast(ResearchState, dict(base))
     merged.update(patch)
     return merged
-

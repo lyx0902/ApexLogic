@@ -28,6 +28,14 @@ ROUTE_WRITER = "writer"
 MIN_CONTEXT_ITEMS = 2
 MIN_DRAFT_LENGTH = 600
 
+# 四维权重
+SCORE_WEIGHTS = {"S1": 0.35, "S2": 0.25, "S3": 0.25, "S4": 0.15}
+# 通过阈值
+PASS_THRESHOLD = float(os.getenv("REVIEWER_PASS_THRESHOLD", "8.5"))
+# 强制回 Researcher 的单维阈值
+RESEARCHER_S1_THRESHOLD = 5
+RESEARCHER_S3_THRESHOLD = 4
+
 
 def _append_error(errors: List[str], message: str) -> List[str]:
     """将错误信息追加到 errors，避免覆盖既有日志。"""
@@ -127,8 +135,10 @@ def _coerce_text_review_to_json(raw: str) -> Dict[str, Any] | None:
         return None
 
     lowered = text.lower()
-    pass_markers = ["[pass]", "评审通过", "通过当前评审", "可结束流程"]
-    is_pass = any(marker in lowered for marker in pass_markers)
+    pass_markers = ["[pass]", "评审通过", "通过当前评审", "can be finalized", "is_satisfactory.*true"]
+    is_pass = any(marker in lowered for marker in pass_markers[:4]) or bool(
+        re.search(r"is_satisfactory.*true", lowered)
+    )
 
     def _extract_after(label_patterns: List[str]) -> List[str]:
         items: List[str] = []
@@ -140,7 +150,6 @@ def _coerce_text_review_to_json(raw: str) -> Dict[str, Any] | None:
             if not block:
                 continue
             items.extend(_to_issue_list(block))
-        # 去重并保持顺序
         dedup: List[str] = []
         seen: set[str] = set()
         for item in items:
@@ -165,50 +174,30 @@ def _coerce_text_review_to_json(raw: str) -> Dict[str, Any] | None:
 
     needs_more_research = any(k in text for k in ["补充检索", "信息不足", "证据不足", "缺少来源"]) or bool(info_gaps)
 
+    # 兜底时给保守的低分，不让报告轻易通过
     if is_pass:
-        return {
-            "supporter": {
-                "strengths": ["审稿文本判定为通过"],
-                "supported_claims": ["可进入交付阶段"],
-            },
-            "skeptic": {
-                "critical_issues": [],
-                "missing_evidence": [],
-            },
-            "judge": {
-                "is_satisfactory": True,
-                "needs_more_research": False,
-                "critique_feedback": "草稿通过当前评审，可结束流程。",
-                "confidence": 0.7,
-                "fact_issues": fact_issues,
-                "logic_issues": logic_issues,
-                "info_gaps": info_gaps,
-                "controversy_points": [],
-                "evidence_verdicts": [],
-            },
-        }
+        scores = {"S1": 7, "S2": 7, "S3": 7, "S4": 7}
+        weighted = 7.0
+    else:
+        scores = {"S1": 4, "S2": 5, "S3": 4, "S4": 5}
+        weighted = 0.35 * 4 + 0.25 * 5 + 0.25 * 4 + 0.15 * 5
 
-    feedback = text[:1200]
     return {
-        "supporter": {
-            "strengths": [],
-            "supported_claims": [],
-        },
-        "skeptic": {
-            "critical_issues": fact_issues + logic_issues,
-            "missing_evidence": info_gaps,
-        },
-        "judge": {
-            "is_satisfactory": False,
-            "needs_more_research": needs_more_research,
-            "critique_feedback": feedback,
-            "confidence": 0.55,
-            "fact_issues": fact_issues,
-            "logic_issues": logic_issues,
-            "info_gaps": info_gaps,
-            "controversy_points": [],
-            "evidence_verdicts": [],
-        },
+        "scores": scores,
+        "weighted_score": round(weighted, 2),
+        "is_satisfactory": is_pass,
+        "needs_more_research": needs_more_research if not is_pass else False,
+        "critique_feedback": "草稿通过当前评审，可结束流程。" if is_pass else text[:1200],
+        "citation_checks": [],
+        "fact_issues": fact_issues,
+        "logic_issues": logic_issues,
+        "info_gaps": info_gaps,
+        "score_rationale": {"S1": "兜底解析", "S2": "兜底解析", "S3": "兜底解析", "S4": "兜底解析"},
+        "supporter": {"strengths": ["审稿文本判定为通过"] if is_pass else [], "supported_claims": []},
+        "skeptic": {"critical_issues": fact_issues + logic_issues, "missing_evidence": info_gaps},
+        "controversy_points": [],
+        "evidence_verdicts": [],
+        "review_mode": "coerce_fallback",
     }
 
 
@@ -264,59 +253,79 @@ def _to_dict_list(value: Any) -> List[Dict[str, Any]]:
     return result
 
 
+def _compute_weighted_score(scores: Dict[str, Any]) -> float:
+    """根据四维分数计算加权总分。"""
+    total = 0.0
+    for dim, weight in SCORE_WEIGHTS.items():
+        total += float(scores.get(dim, 0)) * weight
+    return round(total, 4)
+
+
 def _rule_based_review(
     draft: str,
     retrieved_context: List[Dict[str, Any] | str],
 ) -> Dict[str, Any]:
-    """规则化回退评审。"""
+    """规则化回退评审，使用与 LLM 模式相同的评分结构。"""
 
-    if len(retrieved_context) < MIN_CONTEXT_ITEMS:
+    n_ctx = len(retrieved_context)
+    draft_len = len(draft.strip())
+
+    if n_ctx < MIN_CONTEXT_ITEMS:
+        scores = {"S1": 2, "S2": 5, "S3": 2, "S4": 4}
+        weighted = _compute_weighted_score(scores)
         return {
+            "scores": scores,
+            "weighted_score": weighted,
             "is_satisfactory": False,
             "needs_more_research": True,
-            "critique_feedback": (
-                f"{REVIEWER_SYSTEM_PROMPT} {build_reviewer_rule_hint()} "
-                "当前证据不足，请补充更多高质量来源并覆盖不同观点。"
-            ),
-            "confidence": 0.65,
-            "review_mode": "rule",
-            "supporter": {
-                "strengths": ["主题聚焦明确"],
-                "supported_claims": [],
+            "critique_feedback": "当前证据不足，请补充更多高质量来源并覆盖不同观点。",
+            "citation_checks": [],
+            "fact_issues": [],
+            "logic_issues": [],
+            "info_gaps": ["证据来源数量不足", "观点覆盖不足"],
+            "score_rationale": {
+                "S1": f"仅有 {n_ctx} 条来源，无法有效核查事实",
+                "S2": "结构待评估",
+                "S3": f"来源数量 {n_ctx} 低于阈值，覆盖面存疑",
+                "S4": "待评估",
             },
+            "supporter": {"strengths": ["主题聚焦明确"], "supported_claims": []},
             "skeptic": {
                 "critical_issues": ["证据来源数量不足，无法支撑关键结论"],
                 "missing_evidence": ["需要补充多来源检索结果"],
             },
-            "judge": {
-                "decision": "需补充检索",
-                "rationale": "当前上下文数量不足，无法完成高置信审查。",
-            },
             "controversy_points": ["当前结论是否建立在足够证据之上"],
-            "evidence_verdicts": [
-                {
-                    "claim": "已有证据可支撑完整报告",
-                    "status": "unsupported",
-                    "evidence": "上下文数量低于最低阈值",
-                    "action": "返回 Researcher 补充检索",
-                }
-            ],
-            "fact_issues": [],
-            "logic_issues": [],
-            "info_gaps": ["证据来源数量不足", "观点覆盖不足"],
+            "evidence_verdicts": [{
+                "claim": "已有证据可支撑完整报告",
+                "status": "unsupported",
+                "evidence": f"上下文数量 {n_ctx} 低于最低阈值 {MIN_CONTEXT_ITEMS}",
+                "action": "返回 Researcher 补充检索",
+            }],
+            "review_mode": "rule",
         }
 
-    if len(draft.strip()) < MIN_DRAFT_LENGTH:
+    if draft_len < MIN_DRAFT_LENGTH:
+        scores = {"S1": 5, "S2": 3, "S3": 4, "S4": 2}
+        weighted = _compute_weighted_score(scores)
         return {
+            "scores": scores,
+            "weighted_score": weighted,
             "is_satisfactory": False,
             "needs_more_research": False,
             "critique_feedback": (
-                f"{REVIEWER_SYSTEM_PROMPT} {build_reviewer_rule_hint()} "
                 "草稿深度不足，请增强以下部分："
                 "方法论细节、关键论据展开、结论可执行性与风险边界。"
             ),
-            "confidence": 0.72,
-            "review_mode": "rule",
+            "citation_checks": [],
+            "fact_issues": [],
+            "logic_issues": ["论证展开深度不足", "结论可执行性不够明确"],
+            "info_gaps": [],
+            "score_rationale": {
+                "S1": "草稿过短，事实核查覆盖有限",
+                "S2": f"草稿仅 {draft_len} 字，结构不完整",
+                "S3": "内容过少，覆盖广度无法评估",
+                "S4": "建议部分缺失或过于简略",
+            },
             "supporter": {
                 "strengths": ["已有基础结构与主题相关性"],
                 "supported_claims": ["草稿具备初步结论框架"],
@@ -325,54 +334,48 @@ def _rule_based_review(
                 "critical_issues": ["论证展开深度不足"],
                 "missing_evidence": ["关键论据缺乏细节展开"],
             },
-            "judge": {
-                "decision": "需重写报告",
-                "rationale": "信息量不足但不必重新检索，优先改写论证。",
-            },
             "controversy_points": ["现有文本能否支撑可执行建议"],
-            "evidence_verdicts": [
-                {
-                    "claim": "结论可执行性充分",
-                    "status": "weak",
-                    "evidence": "缺少实施步骤与风险边界",
-                    "action": "返回 Writer 扩写方法与建议",
-                }
-            ],
-            "fact_issues": [],
-            "logic_issues": ["论证展开不足", "结论可执行性不够明确"],
-            "info_gaps": [],
+            "evidence_verdicts": [{
+                "claim": "结论可执行性充分",
+                "status": "weak",
+                "evidence": f"草稿仅 {draft_len} 字，缺少实施步骤与风险边界",
+                "action": "返回 Writer 扩写方法与建议",
+            }],
+            "review_mode": "rule",
         }
 
+    # 规则通过：给出保守的及格分
+    scores = {"S1": 7, "S2": 7, "S3": 7, "S4": 7}
+    weighted = _compute_weighted_score(scores)
     return {
+        "scores": scores,
+        "weighted_score": weighted,
         "is_satisfactory": True,
         "needs_more_research": False,
-        "critique_feedback": "草稿通过当前评审，可结束流程。",
-        "confidence": 0.8,
-        "review_mode": "rule",
+        "critique_feedback": "草稿通过规则评审，可结束流程。",
+        "citation_checks": [],
+        "fact_issues": [],
+        "logic_issues": [],
+        "info_gaps": [],
+        "score_rationale": {
+            "S1": "来源数量及草稿长度满足基础要求",
+            "S2": "结构基本完整",
+            "S3": "覆盖面达到规则最低标准",
+            "S4": "建议部分存在",
+        },
         "supporter": {
             "strengths": ["证据与结论匹配度可接受", "结构完整"],
             "supported_claims": ["可进入交付阶段"],
         },
-        "skeptic": {
-            "critical_issues": [],
-            "missing_evidence": [],
-        },
-        "judge": {
-            "decision": "通过",
-            "rationale": "关键审查项达到当前阈值。",
-        },
+        "skeptic": {"critical_issues": [], "missing_evidence": []},
         "controversy_points": [],
-        "evidence_verdicts": [
-            {
-                "claim": "报告达到可交付标准",
-                "status": "supported",
-                "evidence": "规则评审通过，未发现关键缺口",
-                "action": "结束流程",
-            }
-        ],
-        "fact_issues": [],
-        "logic_issues": [],
-        "info_gaps": [],
+        "evidence_verdicts": [{
+            "claim": "报告达到可交付标准",
+            "status": "supported",
+            "evidence": "规则评审通过，未发现关键缺口",
+            "action": "结束流程",
+        }],
+        "review_mode": "rule",
     }
 
 
@@ -421,8 +424,13 @@ def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[
     }
 
 
-def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
-    """调用 DeepSeek 输出结构化评审 JSON。"""
+def _llm_review(
+    topic: str,
+    draft: str,
+    retrieved_context: List[Dict[str, Any] | str],
+    revision_step: int = 0,
+) -> Dict[str, Any]:
+    """调用 DeepSeek 输出四维量化评分 JSON，传入 top-10 原始来源供事实核查。"""
 
     if ChatOpenAI is None:
         raise RuntimeError("langchain_openai 未安装")
@@ -444,44 +452,84 @@ def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
         [
             ("system", REVIEWER_SYSTEM_PROMPT),
             ("system", build_reviewer_rule_hint()),
-            ("human", build_reviewer_user_prompt(topic, draft, context_count)),
+            ("human", build_reviewer_user_prompt(topic, draft, retrieved_context, revision_step=revision_step - 1)),
         ]
     )
 
     content_obj = getattr(response, "content", "")
     if isinstance(content_obj, list):
-        # 兼容部分模型 SDK 返回分块内容结构
         content = "\n".join(
-            [
-                str(item.get("text", "")) if isinstance(item, dict) else str(item)
-                for item in content_obj
-            ]
+            str(item.get("text", "")) if isinstance(item, dict) else str(item)
+            for item in content_obj
         ).strip()
     else:
         content = str(content_obj or "")
 
     parsed = _parse_review_json(content)
-    parsed_dict = parsed if isinstance(parsed, dict) else {}
-    supporter = parsed_dict.get("supporter", {})
-    skeptic = parsed_dict.get("skeptic", {})
-    judge = parsed_dict.get("judge", {})
+    d = parsed if isinstance(parsed, dict) else {}
 
-    controversy_points = _to_issue_list(judge.get("controversy_points", parsed_dict.get("controversy_points", [])))
-    evidence_verdicts = _to_dict_list(judge.get("evidence_verdicts", parsed_dict.get("evidence_verdicts", [])))
-    fact_issues = _to_issue_list(judge.get("fact_issues", parsed_dict.get("fact_issues", [])))
-    logic_issues = _to_issue_list(judge.get("logic_issues", parsed_dict.get("logic_issues", [])))
-    info_gaps = _to_issue_list(judge.get("info_gaps", parsed_dict.get("info_gaps", [])))
+    # ── 提取四维分数 ────────────────────────────────────────────────
+    raw_scores = d.get("scores", {})
+    scores: Dict[str, int] = {}
+    for dim in ("S1", "S2", "S3", "S4"):
+        val = raw_scores.get(dim, 0)
+        scores[dim] = max(0, min(10, int(val)))
 
-    # 兼容模型未按三层返回时，回退到顶层字段。
-    if not judge and parsed_dict:
-        judge = parsed
+    # 优先信任模型计算的加权分，同时用本地公式兜底验证
+    local_weighted = _compute_weighted_score(scores)
+    reported_weighted = d.get("weighted_score")
+    if reported_weighted is not None:
+        # 允许模型报告值与本地计算值有 ±0.5 误差，否则以本地计算为准
+        weighted_score = float(reported_weighted)
+        if abs(weighted_score - local_weighted) > 0.5:
+            weighted_score = local_weighted
+    else:
+        weighted_score = local_weighted
+
+    # ── 通过判定（以加权总分为准，忽略模型自报的布尔值） ──────────
+    is_satisfactory = weighted_score >= PASS_THRESHOLD
+
+    # ── 路由判定 ────────────────────────────────────────────────────
+    if is_satisfactory:
+        needs_more_research = False
+    else:
+        # S1 < 5（事实严重问题）或 S3 < 4（覆盖严重不足）→ 回 Researcher
+        needs_more_research = (
+            scores.get("S1", 0) < RESEARCHER_S1_THRESHOLD
+            or scores.get("S3", 0) < RESEARCHER_S3_THRESHOLD
+        )
+        # 允许模型也可以触发 needs_more_research（两者取并集）
+        model_nmr = bool(d.get("needs_more_research", False))
+        needs_more_research = needs_more_research or model_nmr
+
+    # ── 提取其他字段 ────────────────────────────────────────────────
+    citation_checks = d.get("citation_checks", [])
+    if not isinstance(citation_checks, list):
+        citation_checks = []
+
+    fact_issues = _to_issue_list(d.get("fact_issues", []))
+    logic_issues = _to_issue_list(d.get("logic_issues", []))
+    info_gaps = _to_issue_list(d.get("info_gaps", []))
+    controversy_points = _to_issue_list(d.get("controversy_points", []))
+    evidence_verdicts = _to_dict_list(d.get("evidence_verdicts", []))
+    score_rationale = d.get("score_rationale", {})
+    if not isinstance(score_rationale, dict):
+        score_rationale = {}
+
+    supporter = d.get("supporter", {})
+    skeptic = d.get("skeptic", {})
 
     return {
-        "is_satisfactory": bool(judge.get("is_satisfactory", parsed_dict.get("is_satisfactory", False))),
-        "needs_more_research": bool(judge.get("needs_more_research", parsed_dict.get("needs_more_research", False))),
-        "critique_feedback": str(judge.get("critique_feedback", parsed_dict.get("critique_feedback", "请给出更具体的修订建议。"))),
-        "confidence": float(judge.get("confidence", parsed_dict.get("confidence", 0.5))),
-        "review_mode": "llm",
+        "scores": scores,
+        "weighted_score": round(weighted_score, 4),
+        "is_satisfactory": is_satisfactory,
+        "needs_more_research": needs_more_research,
+        "critique_feedback": str(d.get("critique_feedback", "请给出更具体的修订建议。")),
+        "citation_checks": citation_checks,
+        "fact_issues": fact_issues,
+        "logic_issues": logic_issues,
+        "info_gaps": info_gaps,
+        "score_rationale": score_rationale,
         "supporter": {
             "strengths": _to_issue_list(supporter.get("strengths", []) if isinstance(supporter, dict) else []),
             "supported_claims": _to_issue_list(supporter.get("supported_claims", []) if isinstance(supporter, dict) else []),
@@ -490,31 +538,26 @@ def _llm_review(topic: str, draft: str, context_count: int) -> Dict[str, Any]:
             "critical_issues": _to_issue_list(skeptic.get("critical_issues", []) if isinstance(skeptic, dict) else []),
             "missing_evidence": _to_issue_list(skeptic.get("missing_evidence", []) if isinstance(skeptic, dict) else []),
         },
-        "judge": {
-            "decision": str(judge.get("decision", "")) if isinstance(judge, dict) else "",
-            "rationale": str(judge.get("rationale", "")) if isinstance(judge, dict) else "",
-        },
         "controversy_points": controversy_points,
         "evidence_verdicts": evidence_verdicts,
-        "fact_issues": fact_issues,
-        "logic_issues": logic_issues,
-        "info_gaps": info_gaps,
+        "review_mode": "llm_scored",
     }
 
 
 def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     """评审代理节点。
 
-    审查维度（规则化占位版本）：
-    1) 信息充分性（上下文数量）
-    2) 草稿完整性（长度与结构）
-    3) 迭代控制（递增 revision_step）
+    审查维度：
+    1) S1 事实准确性（对照 top-10 原始来源核查，权重 35%）
+    2) S2 逻辑完整性（权重 25%）
+    3) S3 信息覆盖广度（权重 25%）
+    4) S4 结论可执行性（权重 15%）
+    加权总分 ≥ PASS_THRESHOLD(默认7.0) 才通过。
     """
 
     revision_step = state.get("revision_step", 0) + 1
     retrieved_context = list(state.get("retrieved_context", []))
     draft = state.get("draft", "")
-
     errors = list(state.get("errors", []))
 
     if not isinstance(draft, str):
@@ -525,15 +568,15 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         review = _llm_review(
             topic=state.get("topic", ""),
             draft=draft,
-            context_count=len(retrieved_context),
+            retrieved_context=retrieved_context,
+            revision_step=revision_step,
         )
     except Exception as exc:
         errors = _append_error(errors, f"Reviewer LLM 评审失败，已回退规则评审: {exc}")
         review = _rule_based_review(draft=draft, retrieved_context=retrieved_context)
 
     is_satisfactory = bool(review.get("is_satisfactory", False))
-    info_gaps = _to_issue_list(review.get("info_gaps", []))
-    needs_more_research = bool(review.get("needs_more_research", False) or info_gaps)
+    needs_more_research = bool(review.get("needs_more_research", False))
 
     if is_satisfactory:
         next_route = ROUTE_END
@@ -542,18 +585,24 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
 
     revision_directives = _build_revision_directives(review=review, next_route=next_route)
 
+    scores = review.get("scores", {})
+    weighted_score = review.get("weighted_score", 0.0)
+
     trace = list(state.get("execution_trace", []))
     trace.append(
         {
             "node": "reviewer",
             "revision_step": revision_step,
             "mode": review.get("review_mode", "rule"),
+            "scores": scores,
+            "weighted_score": weighted_score,
+            "pass_threshold": PASS_THRESHOLD,
             "is_satisfactory": is_satisfactory,
             "next_route": next_route,
-            "confidence": review.get("confidence", 0.0),
             "fact_issues": len(review.get("fact_issues", [])),
             "logic_issues": len(review.get("logic_issues", [])),
             "info_gaps": len(review.get("info_gaps", [])),
+            "citation_checks": len(review.get("citation_checks", [])),
             "controversies": len(review.get("controversy_points", [])),
             "route_reason": revision_directives.get("route_reason", ""),
         }
