@@ -7,7 +7,7 @@ Benchmark 自动化评测主入口，与 main.py / export_report.py 完全独立
     python eval_runner.py --dataset hotpotqa  --limit 100 --scorer llm --concurrency 2
 
 输出：
-    evals/results_<timestamp>.json  含每题结果 + 汇总指标
+    tests/results_<timestamp>.json  含每题结果 + 汇总指标
 """
 
 from __future__ import annotations
@@ -116,6 +116,43 @@ def _llm_judge_with_retry(
     return llm_judge(question=question, pred=pred, gold=gold, client=client, model=model)
 
 
+# ─── search_stats 裁剪：只保留 retriever top20 / reranker top10 元数据 ──────────
+
+def _trim_search_stats(source_quality_summary: Dict[str, Any]) -> Dict[str, Any]:
+    """从完整的 source_quality_summary 中裁剪出轻量版 search_stats。
+
+    只保留：
+      - retriever: 统计数字 + selected_records（top20 元数据：rank/title/source/url/score）
+      - reranker:  统计数字 + selected_records（top10 元数据：rank/title/source/url/score）
+    丢弃 dropped_records / dropped_samples / selected_samples 等冗余字段，节省 token。
+    """
+    bge: Dict[str, Any] = source_quality_summary.get("bge_summary", {})
+
+    def _slim_stage(stage: Dict[str, Any]) -> Dict[str, Any]:
+        """保留计数字段 + selected_records，去掉其余列表。"""
+        slim: Dict[str, Any] = {}
+        # 保留所有非列表的统计字段（enabled, mode, input, selected, top_k 等）
+        for k, v in stage.items():
+            if not isinstance(v, list):
+                slim[k] = v
+        # 只保留 selected_records（已是纯元数据，无 content 字段）
+        if "selected_records" in stage:
+            slim["selected_records"] = stage["selected_records"]
+        return slim
+
+    retriever_raw: Dict[str, Any] = bge.get("retriever", {})
+    reranker_raw: Dict[str, Any] = bge.get("reranker", {})
+
+    return {
+        "retriever": _slim_stage(retriever_raw),
+        "reranker": _slim_stage(reranker_raw),
+        # 保留顶层轻量统计，便于论文表格使用
+        "dedup_total": bge.get("dedup_total"),
+        "final_contexts": bge.get("final_contexts"),
+        "dropped": bge.get("dropped"),
+    }
+
+
 # ─── 单题评测逻辑 ───────────────────────────────────────────────────────────────
 
 def _evaluate_single(
@@ -189,7 +226,9 @@ def _evaluate_single(
 
     # ── 4. 提取实验数据字段（毕设重点）───────────────────────────────────────
     mab_state: Dict[str, Any] = final_state.get("mab_state") or {}
-    search_stats: Dict[str, Any] = final_state.get("source_quality_summary") or {}
+    search_stats: Dict[str, Any] = _trim_search_stats(
+        final_state.get("source_quality_summary") or {}
+    )
 
     # ── 5. 组装结果字典 ───────────────────────────────────────────────────────
     result: Dict[str, Any] = {
@@ -369,7 +408,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("evals"),
+        default=Path("tests"),
         help="结果 JSON 输出目录",
     )
     return parser.parse_args()
