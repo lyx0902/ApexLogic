@@ -1,0 +1,13 @@
+reports/
+logs/
+*.log
+*.sqlite
+
+__pycache__/
+venv/
+.env
+
+node_modules/
+.pytest_cache/
+
+Auto-claude-code-research-in-sleep-main/

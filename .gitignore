@@ -15,4 +15,5 @@ venv/
 # Test/cache artifacts
 .pytest_cache/
 .mypy_cache/
-
+Auto-claude-code-research-in-sleep-main/
+reports/
