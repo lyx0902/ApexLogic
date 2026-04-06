@@ -24,6 +24,7 @@ from tools.arxiv_tool import arxiv_search
 from tools.search_tool import duckduckgo_search, tavily_search
 from optim.mab_search import ThompsonSamplingMAB, compute_source_rewards
 from optim.graph_expand import expand_queries_from_contexts
+from optim.iterative_retrieval import IterativeRetrievalOptimizer
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -478,6 +479,45 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         except Exception as exc:
             errors = _append_error(errors, f"图扩展查询失败，已跳过: {exc}")
 
+    # ── 迭代检索优化（IRCoT）: 推理链→识别缺口→补搜 ─────────────────
+    iter_enabled = os.getenv("ITERATIVE_RETRIEVAL_ENABLED", "1").strip() == "1"
+    iterative_retrieval_summary: Dict[str, Any] = {"enabled": False}
+    reasoning_chains: List[str] = list(state.get("reasoning_chains", []))
+
+    if iter_enabled and normalized_contexts:
+        try:
+            max_hops = int(os.getenv("MAX_HOPS", "2"))
+            gap_queries_per_hop = int(os.getenv("GAP_QUERIES_PER_HOP", "2"))
+            results_per_query = int(os.getenv("GAP_RESULTS_PER_QUERY", "4"))
+
+            optimizer = IterativeRetrievalOptimizer(
+                max_hops=max_hops,
+                gap_queries_per_hop=gap_queries_per_hop,
+                results_per_query=results_per_query,
+            )
+            gap_contexts, new_chains, hop_summaries = optimizer.run(
+                topic=topic,
+                contexts=normalized_contexts,
+                existing_queries=effective_queries,
+            )
+            contexts_before = len(normalized_contexts)
+            if gap_contexts:
+                normalized_contexts = _dedupe_and_index_contexts(
+                    list(normalized_contexts) + list(gap_contexts)
+                )
+            reasoning_chains = reasoning_chains + new_chains
+            iterative_retrieval_summary = {
+                "enabled": True,
+                "max_hops": max_hops,
+                "hops_executed": len(hop_summaries),
+                "contexts_before": contexts_before,
+                "contexts_after": len(normalized_contexts),
+                "gap_contexts_added": len(gap_contexts),
+                "hop_summaries": hop_summaries,
+            }
+        except Exception as exc:
+            errors = _append_error(errors, f"IRCoT 迭代检索失败，已跳过: {exc}")
+
     retriever_top_k = int(os.getenv("BGE_RETRIEVER_TOP_K", "20"))
     reranker_top_k = int(os.getenv("BGE_RERANKER_TOP_K", "10"))
 
@@ -568,6 +608,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             },
             # 图扩展查询摘要
             "graph_expand": graph_expand_summary,
+            # IRCoT 迭代检索摘要
+            "iterative_retrieval": iterative_retrieval_summary,
         }
     )
 
@@ -589,6 +631,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "mab_budgets": mab_budgets,
             "mab_expected_rewards": mab.expected_rewards(),
             "graph_expand": graph_expand_summary,
+            "iterative_retrieval": iterative_retrieval_summary,
         }
     )
 
@@ -599,5 +642,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         "errors": errors,
         "execution_trace": trace,
         "mab_state": updated_mab_state,
+        "reasoning_chains": reasoning_chains,
+        "iterative_retrieval_summary": iterative_retrieval_summary,
     }
 

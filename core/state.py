@@ -47,6 +47,10 @@ class ResearchState(ResearchStateCore, total=False):
     output_mode: Literal["user", "debug"]
     # MAB（多臂赌博机）参数状态，跨迭代持久化，驱动自适应检索预算分配
     mab_state: Dict[str, Any]
+    # IRCoT 迭代检索：每跳生成的推理链文本列表
+    reasoning_chains: List[str]
+    # IRCoT 迭代检索：统计摘要（跳数、新增上下文数、gap_queries 等）
+    iterative_retrieval_summary: Dict[str, Any]
 
 
 def create_initial_state(
@@ -74,6 +78,8 @@ def create_initial_state(
         "source_quality_summary": {},
         "output_mode": output_mode,
         "mab_state": {},
+        "reasoning_chains": [],
+        "iterative_retrieval_summary": {},
     }
 
 

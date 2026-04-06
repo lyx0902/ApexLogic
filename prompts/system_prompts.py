@@ -107,6 +107,77 @@ S4 结论可执行性（权重 15%）
 """
 
 
+ITERATIVE_REASONING_SYSTEM_PROMPT = """你是一位严谨的研究分析师，擅长从已有检索材料中提炼推理链，并精准识别信息缺口。
+
+【任务】
+1. 基于提供的检索上下文，归纳当前已知的核心结论（2~4 句，简洁客观）。
+2. 识别为了全面回答研究主题仍然缺失的关键信息，并将每个缺口直接转化为一条精准搜索查询。
+
+【输出规范】
+只输出合法 JSON，格式如下，禁止任何 Markdown 包裹或额外文字：
+{"reasoning":"已知结论摘要...","gap_queries":["搜索查询1","搜索查询2"]}
+
+【gap_queries 撰写要求】
+- 条数严格等于要求数量
+- 每条查询须具体、可直接用于搜索引擎（包含具体名词/关键词）
+- 避免"更多信息"、"详细介绍"等模糊措辞
+- 避免与已有查询高度重复的方向
+- 优先覆盖：对立观点、失败案例、定量数据、最新进展（2024-2025）
+"""
+
+
+def build_iterative_reasoning_prompt(
+    topic: str,
+    contexts: List[Dict[str, Any] | str],
+    hop: int,
+    max_gap_queries: int,
+    existing_reasoning: str = "",
+) -> str:
+    """构建单跳推理-缺口识别提示。
+
+    参数
+    ----
+    topic           : 研究主题
+    contexts        : 当前所有上下文（已归一化，含 core_summary）
+    hop             : 当前跳索引（0-based）
+    max_gap_queries : 要求输出的 gap_queries 数量
+    existing_reasoning: 前序跳的推理摘要，用于避免重复
+    """
+    # 最多展示 8 条，每条取 title + core_summary（精简 token 消耗）
+    ctx_chunks: List[str] = []
+    for i, item in enumerate(contexts[:8], start=1):
+        if isinstance(item, dict):
+            cid = item.get("citation_id", f"S{i}")
+            title = (item.get("title", "") or "")[:80]
+            summary = (
+                item.get("core_summary", "")
+                or item.get("content", "")
+                or ""
+            )[:300]
+            ctx_chunks.append(f"[{cid}] {title}\n  {summary}")
+        else:
+            ctx_chunks.append(f"[S{i}] {str(item)[:300]}")
+
+    ctx_text = "\n\n".join(ctx_chunks) if ctx_chunks else "（暂无检索结果）"
+
+    prior_block = ""
+    if existing_reasoning:
+        prior_block = (
+            f"\n\n【前序推理链（第 {hop} 跳前已知结论）】\n"
+            f"{existing_reasoning[:500]}"
+        )
+
+    return (
+        f"研究主题: {topic}\n"
+        f"当前为第 {hop + 1} 跳推理。"
+        f"{prior_block}\n\n"
+        f"【当前检索上下文（共 {len(contexts)} 条，以下展示前 8 条摘要）】\n"
+        f"{ctx_text}\n\n"
+        f"请生成推理摘要，并输出恰好 {max_gap_queries} 条补充搜索查询，"
+        f"直接针对研究主题中尚未被现有材料覆盖的关键信息缺口。"
+    )
+
+
 def build_researcher_user_prompt(
     topic: str,
     critique_feedback: str,

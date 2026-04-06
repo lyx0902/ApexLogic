@@ -456,6 +456,56 @@ def _render_markdown_debug(state: ResearchState) -> str:
             lines.append(f"- DDG 扩展检索新增文档数: {graph_expand.get('extra_contexts', 0)}")
             lines.append(f"- 合并后去重候选总数: {graph_expand.get('total_after_merge', 0)}")
 
+    # ── IRCoT 迭代检索摘要 ──────────────────────────────────────────
+    ircot = bge_summary.get("iterative_retrieval", {}) or {}
+    reasoning_chains = state.get("reasoning_chains", []) or []
+    if ircot or reasoning_chains:
+        lines.append("")
+        lines.append("## 9. IRCoT 迭代检索（Iterative Retrieval with Chain-of-Thought）")
+        lines.append("")
+        ir_enabled = ircot.get("enabled", False)
+        lines.append(f"- 启用状态: {'✅ 已启用' if ir_enabled else '❌ 未启用或已跳过'}")
+        if ir_enabled:
+            lines.append(f"- 执行跳数: {ircot.get('hops_executed', 0)}")
+            lines.append(f"- IRCoT 前候选文档数: {ircot.get('contexts_before', 0)}")
+            lines.append(f"- IRCoT 后候选文档数: {ircot.get('contexts_after', 0)}")
+            lines.append(f"- gap 查询新增文档数: {ircot.get('gap_contexts_added', 0)}")
+            hop_summaries = ircot.get("hop_summaries", []) or []
+            if hop_summaries:
+                lines.append("")
+                lines.append("### 9.1 各跳统计")
+                lines.append("")
+                for hs in hop_summaries:
+                    hop_id = hs.get("hop", "-")
+                    status = hs.get("status", "unknown")
+                    lines.append(f"#### 第 {hop_id} 跳（状态: {status}）")
+                    reason = hs.get("reasoning_preview", "")
+                    if reason:
+                        lines.append(f"- 推理预览: {reason[:200]}")
+                    gq = hs.get("gap_queries", [])
+                    if gq:
+                        lines.append(f"- gap 查询（{len(gq)} 条）:")
+                        for q in gq:
+                            lines.append(f"  - {q}")
+                    lines.append(f"- 本跳新增文档数: {hs.get('new_contexts', 0)}")
+                    lines.append("")
+        elif ircot.get("hops_executed") == 0:
+            skip_reason = ""
+            hop_summaries = ircot.get("hop_summaries", []) or []
+            if hop_summaries:
+                skip_reason = hop_summaries[0].get("reason", "")
+            lines.append(f"- 跳过原因: {skip_reason or '未知'}")
+
+        if reasoning_chains:
+            lines.append("")
+            lines.append("### 9.2 推理链记录")
+            lines.append("")
+            for i, chain in enumerate(reasoning_chains, start=1):
+                lines.append(f"#### 第 {i} 条推理链")
+                truncated = chain[:600] + "..." if len(chain) > 600 else chain
+                lines.append(truncated)
+                lines.append("")
+
     return "\n".join(lines)
 
 
@@ -535,6 +585,8 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
                 except (ValueError, AttributeError):
                     pass
 
+    ircot_summary = bge_summary.get("iterative_retrieval", {}) or {}
+
     return {
         "topic": state.get("topic", ""),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -542,6 +594,15 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
         "mab": {
             "state": mab_state_payload,
             "last_round": bge_summary_mab,
+        },
+        "iterative_retrieval": {
+            "enabled": ircot_summary.get("enabled", False),
+            "hops_executed": ircot_summary.get("hops_executed", 0),
+            "contexts_before": ircot_summary.get("contexts_before", 0),
+            "contexts_after": ircot_summary.get("contexts_after", 0),
+            "gap_contexts_added": ircot_summary.get("gap_contexts_added", 0),
+            "hop_summaries": ircot_summary.get("hop_summaries", []),
+            "reasoning_chains": state.get("reasoning_chains", []),
         },
         "graph_expand": {
             "enabled": graph_expand.get("enabled", False),
