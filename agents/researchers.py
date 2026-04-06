@@ -25,6 +25,7 @@ from tools.search_tool import duckduckgo_search, tavily_search
 from optim.mab_search import ThompsonSamplingMAB, compute_source_rewards
 from optim.graph_expand import expand_queries_from_contexts
 from optim.iterative_retrieval import IterativeRetrievalOptimizer
+from optim.query_planner import AdaptiveQueryPlanner
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -479,6 +480,34 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         except Exception as exc:
             errors = _append_error(errors, f"图扩展查询失败，已跳过: {exc}")
 
+    # ── 自适应查询分解（AQD）: 分解主题→子问题→逐一补搜 ──────────────
+    aqd_enabled = os.getenv("AQD_ENABLED", "1").strip() == "1"
+    query_plan: Dict[str, Any] = {"enabled": False}
+
+    if aqd_enabled and normalized_contexts:
+        try:
+            max_sub_questions = int(os.getenv("AQD_MAX_SUB_QUESTIONS", "4"))
+            results_per_subq = int(os.getenv("AQD_RESULTS_PER_SUBQ", "3"))
+            planner = AdaptiveQueryPlanner(
+                max_sub_questions=max_sub_questions,
+                results_per_subq=results_per_subq,
+            )
+            contexts_before_aqd = len(normalized_contexts)
+            aqd_contexts, query_plan = planner.run(
+                topic=topic,
+                contexts=normalized_contexts,
+                existing_queries=effective_queries,
+            )
+            if aqd_contexts:
+                normalized_contexts = _dedupe_and_index_contexts(
+                    list(normalized_contexts) + list(aqd_contexts)
+                )
+            if query_plan.get("enabled"):
+                query_plan["contexts_before"] = contexts_before_aqd
+                query_plan["contexts_after"] = len(normalized_contexts)
+        except Exception as exc:
+            errors = _append_error(errors, f"AQD 查询分解失败，已跳过: {exc}")
+
     # ── 迭代检索优化（IRCoT）: 推理链→识别缺口→补搜 ─────────────────
     iter_enabled = os.getenv("ITERATIVE_RETRIEVAL_ENABLED", "1").strip() == "1"
     iterative_retrieval_summary: Dict[str, Any] = {"enabled": False}
@@ -608,6 +637,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             },
             # 图扩展查询摘要
             "graph_expand": graph_expand_summary,
+            # AQD 自适应查询分解摘要
+            "query_plan": query_plan,
             # IRCoT 迭代检索摘要
             "iterative_retrieval": iterative_retrieval_summary,
         }
@@ -631,6 +662,11 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "mab_budgets": mab_budgets,
             "mab_expected_rewards": mab.expected_rewards(),
             "graph_expand": graph_expand_summary,
+            "query_plan": {
+                "enabled": query_plan.get("enabled", False),
+                "sub_questions_count": query_plan.get("sub_questions_count", 0),
+                "total_new_docs": query_plan.get("total_new_docs", 0),
+            },
             "iterative_retrieval": iterative_retrieval_summary,
         }
     )
@@ -644,5 +680,6 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         "mab_state": updated_mab_state,
         "reasoning_chains": reasoning_chains,
         "iterative_retrieval_summary": iterative_retrieval_summary,
+        "query_plan": query_plan,
     }
 

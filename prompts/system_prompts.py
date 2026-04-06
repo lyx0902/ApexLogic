@@ -126,6 +126,78 @@ ITERATIVE_REASONING_SYSTEM_PROMPT = """你是一位严谨的研究分析师，�
 """
 
 
+AQD_DECOMPOSE_SYSTEM_PROMPT = """你是一位专业的研究规划师，擅长将复杂研究主题结构化分解为可独立检索的子问题序列。
+
+【任务】
+分析研究主题及已有的参考上下文，将主题分解为指定数量的原子级子问题。每个子问题须满足：
+1. 比原始主题更具体，可直接用于搜索引擎检索
+2. 明确指定依赖关系（depends_on 中填写须先回答的子问题 ID，无依赖则为 []）
+3. 提供一条简洁、可直接搜索的查询字符串（search_query）
+
+【子问题类型参考（按推荐优先级排列）】
+- 定义型：核心概念/术语的准确定义与背景
+- 方法型：具体技术方案、算法、实现路径
+- 对比型：不同方法/方案的横向对比与优劣分析
+- 评估型：定量性能数据、基准测试结果、实验发现
+- 应用型：实际应用场景、行业案例
+- 局限型：已知局限性、失败案例、批判性视角
+
+【输出规范】
+只输出合法 JSON，格式如下，禁止任何 Markdown 包裹或额外文字：
+{"sub_questions":[{"id":1,"question":"子问题描述","search_query":"检索查询语句","depends_on":[]},{"id":2,"question":"...","search_query":"...","depends_on":[1]}]}
+
+【注意事项】
+- 子问题数量严格等于要求数量，ID 从 1 连续递增
+- depends_on 禁止循环依赖，禁止自引用（depends_on 中不得包含当前子问题自身的 ID）
+- search_query 须为可直接输入搜索引擎的短句（10~60 个中文字符或英文单词），不含代词（如"它"、"该方法"）
+- 禁止生成与已有检索查询高度重复的子问题
+- 优先让前置子问题（定义型/方法型）无依赖，让对比型/评估型依赖前置子问题
+"""
+
+
+def build_aqd_decompose_prompt(
+    topic: str,
+    contexts: List[Dict[str, Any] | str],
+    n_sub_questions: int,
+    existing_queries: List[str],
+) -> str:
+    """构建 AQD 分解提示，传入初始上下文供 LLM 参考主题理解。
+
+    参数
+    ----
+    topic           : 研究主题
+    contexts        : 已归一化的初始上下文列表（前 5 条展示给 LLM）
+    n_sub_questions : 要求输出的子问题数量
+    existing_queries: 已有检索查询（避免子问题与其高度重叠）
+    """
+    ctx_chunks: List[str] = []
+    for i, item in enumerate(contexts[:5], start=1):
+        if isinstance(item, dict):
+            cid = item.get("citation_id", f"S{i}")
+            title = (item.get("title", "") or "")[:80]
+            summary = (item.get("core_summary", "") or item.get("content", "") or "")[:200]
+            ctx_chunks.append(f"[{cid}] {title}: {summary}")
+        else:
+            ctx_chunks.append(f"[S{i}] {str(item)[:200]}")
+
+    ctx_text = "\n".join(ctx_chunks) if ctx_chunks else "（暂无初始上下文）"
+
+    existing_text = ""
+    if existing_queries:
+        existing_text = "\n\n【已有检索查询（子问题请避免与这些高度重复）】\n"
+        existing_text += "\n".join(f"- {q}" for q in existing_queries[:6])
+
+    return (
+        f"研究主题: {topic}\n\n"
+        f"【参考上下文（前 5 条，供主题理解参考）】\n"
+        f"{ctx_text}"
+        f"{existing_text}\n\n"
+        f"请将上述研究主题分解为恰好 {n_sub_questions} 个子问题，"
+        f"确保覆盖主题的核心维度（定义→方法→对比→评估→应用→局限），"
+        f"并合理设置依赖关系（定义型无依赖，对比型依赖方法型）。"
+    )
+
+
 def build_iterative_reasoning_prompt(
     topic: str,
     contexts: List[Dict[str, Any] | str],

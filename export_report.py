@@ -506,6 +506,41 @@ def _render_markdown_debug(state: ResearchState) -> str:
                 lines.append(truncated)
                 lines.append("")
 
+    # ── AQD 自适应查询分解摘要 ─────────────────────────────────────
+    qplan = bge_summary.get("query_plan", {}) or {}
+    if qplan:
+        lines.append("")
+        lines.append("## 10. AQD 自适应查询分解（Adaptive Query Decomposition）")
+        lines.append("")
+        aqd_enabled = qplan.get("enabled", False)
+        lines.append(f"- 启用状态: {'✅ 已启用' if aqd_enabled else '❌ 未启用或已跳过'}")
+        if aqd_enabled:
+            lines.append(f"- 子问题数量: {qplan.get('sub_questions_count', 0)}")
+            exec_order = qplan.get("execution_order", [])
+            lines.append(f"- 执行顺序（拓扑排序）: {exec_order}")
+            lines.append(f"- AQD 前候选文档数: {qplan.get('contexts_before', 0)}")
+            lines.append(f"- AQD 后候选文档数: {qplan.get('contexts_after', 0)}")
+            lines.append(f"- 新增文档总数: {qplan.get('total_new_docs', 0)}")
+            sub_results = qplan.get("sub_results", []) or []
+            if sub_results:
+                lines.append("")
+                lines.append("### 10.1 子问题执行明细")
+                lines.append("")
+                lines.append("| ID | 子问题 | 搜索查询 | 依赖 | 新增文档 | 状态 |")
+                lines.append("|----|--------|---------|------|---------|------|")
+                for sr in sub_results:
+                    sid = sr.get("id", "-")
+                    question = str(sr.get("question", "")).replace("|", "｜")[:50]
+                    sq = str(sr.get("search_query", "")).replace("|", "｜")[:50]
+                    deps = str(sr.get("depends_on", []))
+                    ndocs = sr.get("new_docs", 0)
+                    status = "跳过（重复）" if sr.get("skipped") else "已检索"
+                    lines.append(f"| {sid} | {question} | {sq} | {deps} | {ndocs} | {status} |")
+                lines.append("")
+        else:
+            reason = qplan.get("reason", "未知")
+            lines.append(f"- 跳过原因: {reason}")
+
     return "\n".join(lines)
 
 
@@ -586,6 +621,7 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
                     pass
 
     ircot_summary = bge_summary.get("iterative_retrieval", {}) or {}
+    aqd_summary = bge_summary.get("query_plan", {}) or {}
 
     return {
         "topic": state.get("topic", ""),
@@ -594,6 +630,16 @@ def _build_bge_details_payload(state: ResearchState) -> Dict[str, object]:
         "mab": {
             "state": mab_state_payload,
             "last_round": bge_summary_mab,
+        },
+        "query_plan": {
+            "enabled": aqd_summary.get("enabled", False),
+            "reason": aqd_summary.get("reason", ""),
+            "sub_questions_count": aqd_summary.get("sub_questions_count", 0),
+            "execution_order": aqd_summary.get("execution_order", []),
+            "total_new_docs": aqd_summary.get("total_new_docs", 0),
+            "contexts_before": aqd_summary.get("contexts_before", 0),
+            "contexts_after": aqd_summary.get("contexts_after", 0),
+            "sub_results": aqd_summary.get("sub_results", []),
         },
         "iterative_retrieval": {
             "enabled": ircot_summary.get("enabled", False),

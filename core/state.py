@@ -51,6 +51,8 @@ class ResearchState(ResearchStateCore, total=False):
     reasoning_chains: List[str]
     # IRCoT 迭代检索：统计摘要（跳数、新增上下文数、gap_queries 等）
     iterative_retrieval_summary: Dict[str, Any]
+    # AQD 自适应查询分解：执行计划摘要（子问题列表、执行顺序、每题新增文档数）
+    query_plan: Dict[str, Any]
 
 
 def create_initial_state(
@@ -80,6 +82,7 @@ def create_initial_state(
         "mab_state": {},
         "reasoning_chains": [],
         "iterative_retrieval_summary": {},
+        "query_plan": {},
     }
 
 
