@@ -11,3 +11,5 @@ node_modules/
 .pytest_cache/
 
 Auto-claude-code-research-in-sleep-main/
+reports/
+tests/
