@@ -9,14 +9,32 @@
 
 from __future__ import annotations
 
-from typing import List, Dict
+from typing import Dict, List
 
 
-# split 优先级：优先 test，其次 validation，最后 train
-_SPLIT_CANDIDATES = ["test", "validation", "train"]
+# 默认 split 优先级：优先 test，其次 validation，最后 train
+_DEFAULT_SPLIT_CANDIDATES = ["test", "validation", "train"]
 
 
-def _load_with_fallback(hf_path: str, hf_name: str | None = None) -> object:
+def _resolve_split_candidates(preferred_split: str | None = None) -> List[str]:
+    """构造 split 尝试顺序：优先 preferred_split，再尝试其余候选。"""
+
+    if not preferred_split:
+        return list(_DEFAULT_SPLIT_CANDIDATES)
+
+    preferred = preferred_split.strip().lower()
+    ordered = [preferred]
+    for split in _DEFAULT_SPLIT_CANDIDATES:
+        if split != preferred:
+            ordered.append(split)
+    return ordered
+
+
+def _load_with_fallback(
+    hf_path: str,
+    hf_name: str | None = None,
+    preferred_split: str | None = None,
+) -> object:
     """尝试按 split 优先级加载，返回第一个成功的 Dataset 对象。"""
     try:
         from datasets import load_dataset as hf_load  # type: ignore
@@ -25,8 +43,10 @@ def _load_with_fallback(hf_path: str, hf_name: str | None = None) -> object:
             "缺少 `datasets` 依赖，请执行：pip install datasets"
         ) from exc
 
+    split_candidates = _resolve_split_candidates(preferred_split)
+
     last_exc: Exception | None = None
-    for split in _SPLIT_CANDIDATES:
+    for split in split_candidates:
         try:
             if hf_name:
                 ds = hf_load(hf_path, hf_name, split=split, trust_remote_code=True)
@@ -38,31 +58,47 @@ def _load_with_fallback(hf_path: str, hf_name: str | None = None) -> object:
             continue
 
     raise RuntimeError(
-        f"无法从 {hf_path!r} 加载任何 split（尝试了 {_SPLIT_CANDIDATES}）。"
+        f"无法从 {hf_path!r} 加载任何 split（尝试了 {split_candidates}）。"
         f"最后一次错误：{last_exc}"
     )
 
 
-def _load_hotpotqa(limit: int | None, difficulty: str | None = None) -> List[Dict[str, str]]:
+def _load_hotpotqa(
+    limit: int | None,
+    difficulty: str | None = None,
+    split: str | None = None,
+) -> List[Dict[str, str]]:
     """加载 HotpotQA distractor 验证集。
 
     Args:
         difficulty: 可选难度过滤，取值 "easy" / "medium" / "hard"；None 表示不过滤。
     """
-    ds = _load_with_fallback("hotpot_qa", "distractor")
+    # HotpotQA distractor 的 validation 主要为 hard；指定难度时默认优先 train。
+    preferred_split = split
+    if preferred_split is None and difficulty:
+        preferred_split = "train"
+
+    ds = _load_with_fallback("hotpot_qa", "distractor", preferred_split=preferred_split)
     items: List[Dict[str, str]] = []
+
+    normalized_difficulty = (difficulty or "").strip().lower()
+    if normalized_difficulty in {"easy", "medium", "hard"}:
+        ds = ds.filter(lambda x: str(x.get("level", "")).lower() == normalized_difficulty)
+
     for row in ds:
-        if difficulty and row.get("level", "") == difficulty:
+        question = row.get("question", "")
+        answer = row.get("answer", "")
+        if not question or not answer:
             continue
-        items.append({"question": row["question"], "answer": row["answer"]})
+        items.append({"question": question, "answer": answer})
         if limit and len(items) >= limit:
             break
     return items
 
 
-def _load_bamboogle(limit: int | None) -> List[Dict[str, str]]:
+def _load_bamboogle(limit: int | None, split: str | None = None) -> List[Dict[str, str]]:
     """加载 Bamboogle 数据集（多跳推理，难度高）。"""
-    ds = _load_with_fallback("chiayewken/bamboogle")
+    ds = _load_with_fallback("chiayewken/bamboogle", preferred_split=split)
     items: List[Dict[str, str]] = []
     for row in ds:
         # 字段名为 Question / Answer（首字母大写）
@@ -85,6 +121,7 @@ def load_eval_dataset(
     name: str,
     limit: int | None = None,
     difficulty: str | None = None,
+    split: str | None = None,
 ) -> List[Dict[str, str]]:
     """统一数据集加载入口。
 
@@ -92,6 +129,7 @@ def load_eval_dataset(
         name:       数据集名称，支持 "hotpotqa" / "bamboogle"
         limit:      截断条数；None 表示全量加载
         difficulty: 仅对 hotpotqa 生效，过滤难度 "easy" / "medium" / "hard"；None 不过滤
+        split:      指定优先 split（"train" / "validation" / "test"）；None 按默认优先级
 
     Returns:
         List[{"question": str, "answer": str}]
@@ -102,8 +140,8 @@ def load_eval_dataset(
             f"不支持的数据集 {name!r}，可选值：{list(_DATASET_LOADERS)}"
         )
     if name == "hotpotqa":
-        return _load_hotpotqa(limit, difficulty=difficulty)
-    return _DATASET_LOADERS[name](limit)
+        return _load_hotpotqa(limit, difficulty=difficulty, split=split)
+    return _load_bamboogle(limit, split=split)
 
 
 if __name__ == "__main__":

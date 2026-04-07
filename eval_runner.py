@@ -272,11 +272,20 @@ def run_eval(
     concurrency: int,
     output_dir: Path,
     difficulty: str | None = None,
+    split: str | None = None,
 ) -> Path:
     """执行完整评测流程，返回结果文件路径。"""
 
-    print(f"[eval] 加载数据集: {dataset_name}  limit={limit}  difficulty={difficulty or 'all'}")
-    items = load_eval_dataset(dataset_name, limit=limit, difficulty=difficulty)
+    print(
+        f"[eval] 加载数据集: {dataset_name}  limit={limit}  "
+        f"difficulty={difficulty or 'all'}  split={split or 'auto'}"
+    )
+    items = load_eval_dataset(
+        dataset_name,
+        limit=limit,
+        difficulty=difficulty,
+        split=split,
+    )
     print(f"[eval] 共 {len(items)} 道题，scorer={scorer}，concurrency={concurrency}")
 
     model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
@@ -421,6 +430,12 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="仅对 hotpotqa 生效：过滤指定难度题目",
     )
+    parser.add_argument(
+        "--split",
+        choices=["auto", "train", "validation", "test"],
+        default="auto",
+        help="数据集 split；auto 表示按默认优先级自动尝试",
+    )
     return parser.parse_args()
 
 
@@ -441,6 +456,7 @@ def main() -> None:
         concurrency=args.concurrency,
         output_dir=args.output_dir,
         difficulty=args.difficulty,
+        split=None if args.split == "auto" else args.split,
     )
 
 
