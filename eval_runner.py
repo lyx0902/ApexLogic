@@ -100,10 +100,10 @@ def _invoke_graph(app: Any, initial_state: Dict[str, Any]) -> Dict[str, Any]:
 
 @retry(**_RETRY_KWARGS)
 def _extract_answer_with_retry(
-    question: str, draft: str, client: Any, model: str
+    question: str, draft: str, client: Any, model: str, force_guess: bool = False
 ) -> Dict[str, str]:
     """带重试的答案提取调用。"""
-    return extract_answer(question=question, draft=draft, client=client, model=model)
+    return extract_answer(question=question, draft=draft, client=client, model=model, force_guess=force_guess)
 
 
 # ─── 带重试的 LLM Judge ─────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ def _evaluate_single(
     # ── 1. 运行 ResearchGraph ──────────────────────────────────────────────────
     final_state: Dict[str, Any] = {}
     try:
-        initial_state = create_initial_state(topic=question, output_mode="user")
+        initial_state = create_initial_state(topic=question, output_mode="eval")
         final_state = _invoke_graph(app, initial_state)
     except Exception as exc:  # noqa: BLE001
         errors.append(f"graph invoke 失败: {exc}")
@@ -187,12 +187,15 @@ def _evaluate_single(
 
     # ── 2. 提取 final_answer + CoT ────────────────────────────────────────────
     extraction: Dict[str, str] = {"final_answer": "", "cot_reasoning": ""}
+    # 最后一轮（已达上限）时强制猜测，避免输出 "Not found in context"
+    is_last_round = final_state.get("revision_step", 0) >= max_revisions
     try:
         extraction = _extract_answer_with_retry(
             question=question,
             draft=draft,
             client=llm_client,
             model=model,
+            force_guess=is_last_round,
         )
     except Exception as exc:  # noqa: BLE001
         errors.append(f"answer extraction 失败: {exc}")
@@ -268,11 +271,12 @@ def run_eval(
     max_revisions: int,
     concurrency: int,
     output_dir: Path,
+    difficulty: str | None = None,
 ) -> Path:
     """执行完整评测流程，返回结果文件路径。"""
 
-    print(f"[eval] 加载数据集: {dataset_name}  limit={limit}")
-    items = load_eval_dataset(dataset_name, limit=limit)
+    print(f"[eval] 加载数据集: {dataset_name}  limit={limit}  difficulty={difficulty or 'all'}")
+    items = load_eval_dataset(dataset_name, limit=limit, difficulty=difficulty)
     print(f"[eval] 共 {len(items)} 道题，scorer={scorer}，concurrency={concurrency}")
 
     model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
@@ -411,6 +415,12 @@ def _parse_args() -> argparse.Namespace:
         default=Path("tests"),
         help="结果 JSON 输出目录",
     )
+    parser.add_argument(
+        "--difficulty",
+        choices=["easy", "medium", "hard"],
+        default=None,
+        help="仅对 hotpotqa 生效：过滤指定难度题目",
+    )
     return parser.parse_args()
 
 
@@ -430,6 +440,7 @@ def main() -> None:
         max_revisions=args.max_revisions,
         concurrency=args.concurrency,
         output_dir=args.output_dir,
+        difficulty=args.difficulty,
     )
 
 

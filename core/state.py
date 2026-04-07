@@ -43,8 +43,8 @@ class ResearchState(ResearchStateCore, total=False):
     feedback_paragraph_mapping: List[Dict[str, Any]]
     # Researcher 生成的检索阶段摘要（当前用于 BGE pipeline 统计）
     source_quality_summary: Dict[str, Any]
-    # 报告输出模式：user(面向读者) / debug(含系统细节)
-    output_mode: Literal["user", "debug"]
+    # 报告输出模式：user(面向读者) / debug(含系统细节) / eval(极简答题备忘录)
+    output_mode: Literal["user", "debug", "both", "user_only", "eval"]
     # MAB（多臂赌博机）参数状态，跨迭代持久化，驱动自适应检索预算分配
     mab_state: Dict[str, Any]
     # IRCoT 迭代检索：每跳生成的推理链文本列表
@@ -57,7 +57,7 @@ class ResearchState(ResearchStateCore, total=False):
 
 def create_initial_state(
     topic: str,
-    output_mode: Literal["user", "debug"] = "debug",
+    output_mode: Literal["user", "debug", "both", "user_only", "eval"] = "debug",
 ) -> ResearchState:
     """创建满足核心约束的初始状态。"""
 

@@ -13,7 +13,12 @@ try:
 except Exception:
     ChatOpenAI = None
 
-from prompts.system_prompts import WRITER_SYSTEM_PROMPT, build_writer_user_prompt
+from prompts.system_prompts import (
+    WRITER_SYSTEM_PROMPT,
+    WRITER_SYSTEM_PROMPT_EVAL,
+    build_writer_user_prompt,
+    build_writer_user_prompt_eval,
+)
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -111,21 +116,30 @@ def _generate_draft_with_llm(
     retrieved_context: List[Dict[str, Any] | str],
     revision_directives: Dict[str, Any],
     previous_draft: str = "",
+    eval_mode: bool = False,
 ) -> str:
     """调用 LLM 生成整篇草稿。"""
 
-    user_prompt = build_writer_user_prompt(
-        topic=topic,
-        revision_step=revision_step,
-        critique_feedback=critique_feedback,
-        retrieved_context=retrieved_context,
-        revision_directives=revision_directives,
-        previous_draft=previous_draft,
-    )
+    if eval_mode:
+        system_prompt = WRITER_SYSTEM_PROMPT_EVAL
+        user_prompt = build_writer_user_prompt_eval(
+            topic=topic,
+            retrieved_context=retrieved_context,
+        )
+    else:
+        system_prompt = WRITER_SYSTEM_PROMPT
+        user_prompt = build_writer_user_prompt(
+            topic=topic,
+            revision_step=revision_step,
+            critique_feedback=critique_feedback,
+            retrieved_context=retrieved_context,
+            revision_directives=revision_directives,
+            previous_draft=previous_draft,
+        )
 
     response = llm.invoke(
         [
-            ("system", WRITER_SYSTEM_PROMPT),
+            ("system", system_prompt),
             ("human", user_prompt),
         ]
     )
@@ -219,6 +233,7 @@ def writer_node(state: ResearchState) -> Dict[str, Any]:
             retrieved_context=retrieved_context,
             revision_directives=revision_directives,
             previous_draft=_get_previous_draft(state),
+            eval_mode=(state.get("output_mode") == "eval"),
         )
         if not draft:
             draft = _fallback_draft(topic, revision_step, critique_feedback, retrieved_context)

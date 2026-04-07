@@ -53,6 +53,18 @@ WRITER_SYSTEM_PROMPT = """
 请输出排版精美的 Markdown 格式研究报告。若题目明确要求多个事物互相对比指标时可以采用表格的形式直观的展示数据元素内容。在提出关键数据或观点时，请在句末使用自然语言标注来源（例如："根据XX研究显示..."）。
 """
 
+WRITER_SYSTEM_PROMPT_EVAL = """
+【角色设定】
+你是一位 Benchmark 答题备忘录生成器。你的唯一任务是从检索上下文中直接提炼出问题答案，用最精简的语言呈现。
+
+【核心规则】
+1. 总字数严格不超过 300 字。
+2. 禁止生成引言、背景、总结、参考文献等冗余章节。
+3. 结构只需：【直接结论】+【关键支撑事实（带 [SX] 引用）】。
+4. 每个引用必须来源于提供的 <Context>，不得凭空捏造。
+5. 如有多个候选答案，列出最可能的 1~2 条，每条一行。
+"""
+
 REVIEWER_SYSTEM_PROMPT = """
 【角色】高级研究质量审查官
 
@@ -358,6 +370,32 @@ def build_writer_user_prompt(
         f"【检索上下文（共 {len(chunks)} 条，所有引用必须来自此处）】\n"
         f"{context_text}\n\n"
         "输出完整 Markdown 报告，不要输出任何解释性前言或结尾说明。"
+    )
+
+
+def build_writer_user_prompt_eval(
+    topic: str,
+    retrieved_context: List[Dict[str, Any] | str],
+) -> str:
+    """构建 Eval 模式的极简答题备忘录提示（<=300字）。"""
+
+    chunks: List[str] = []
+    for idx, item in enumerate(retrieved_context[:10], start=1):
+        if isinstance(item, dict):
+            citation = item.get("citation_id", f"S{idx}")
+            title = (item.get("title", "") or "")[:80]
+            summary = (item.get("core_summary", "") or item.get("content", "") or "")[:300]
+            chunks.append(f"[{citation}] {title}: {summary}")
+        else:
+            chunks.append(f"[S{idx}] {str(item)[:300]}")
+    context_text = "\n\n".join(chunks)
+
+    return (
+        f"研究主题（即问题）: {topic}\n\n"
+        f"【检索上下文（共 {len(chunks)} 条）】\n"
+        f"{context_text}\n\n"
+        "请输出不超过 300 字的【Benchmark答题备忘录】，直击问题核心结论，"
+        "带 [SX] 引用标注，禁止生成引言/背景/总结等章节。"
     )
 
 

@@ -43,11 +43,17 @@ def _load_with_fallback(hf_path: str, hf_name: str | None = None) -> object:
     )
 
 
-def _load_hotpotqa(limit: int | None) -> List[Dict[str, str]]:
-    """加载 HotpotQA distractor 验证集。"""
+def _load_hotpotqa(limit: int | None, difficulty: str | None = None) -> List[Dict[str, str]]:
+    """加载 HotpotQA distractor 验证集。
+
+    Args:
+        difficulty: 可选难度过滤，取值 "easy" / "medium" / "hard"；None 表示不过滤。
+    """
     ds = _load_with_fallback("hotpot_qa", "distractor")
     items: List[Dict[str, str]] = []
     for row in ds:
+        if difficulty and row.get("level", "") == difficulty:
+            continue
         items.append({"question": row["question"], "answer": row["answer"]})
         if limit and len(items) >= limit:
             break
@@ -75,12 +81,17 @@ _DATASET_LOADERS = {
 }
 
 
-def load_eval_dataset(name: str, limit: int | None = None) -> List[Dict[str, str]]:
+def load_eval_dataset(
+    name: str,
+    limit: int | None = None,
+    difficulty: str | None = None,
+) -> List[Dict[str, str]]:
     """统一数据集加载入口。
 
     Args:
-        name:  数据集名称，支持 "hotpotqa" / "bamboogle"
-        limit: 截断条数；None 表示全量加载
+        name:       数据集名称，支持 "hotpotqa" / "bamboogle"
+        limit:      截断条数；None 表示全量加载
+        difficulty: 仅对 hotpotqa 生效，过滤难度 "easy" / "medium" / "hard"；None 不过滤
 
     Returns:
         List[{"question": str, "answer": str}]
@@ -90,6 +101,8 @@ def load_eval_dataset(name: str, limit: int | None = None) -> List[Dict[str, str
         raise ValueError(
             f"不支持的数据集 {name!r}，可选值：{list(_DATASET_LOADERS)}"
         )
+    if name == "hotpotqa":
+        return _load_hotpotqa(limit, difficulty=difficulty)
     return _DATASET_LOADERS[name](limit)
 
 

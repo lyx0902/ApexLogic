@@ -30,7 +30,8 @@ Keep original English spelling exactly as it appears in the source.
 2. DATE FORMAT: If the answer is a date, output it as "Month Day, Year" \
 (e.g., "June 20, 1837" or "April 30, 1789"). Do NOT convert to other formats.
 3. LENGTH: The answer must be extremely concise — typically 1 to 5 words or a short phrase. \
-No explanations, no sentences, no punctuation at the end unless part of the answer itself.
+No explanations, no sentences, no punctuation at the end unless part of the answer itself. \
+Your <think> section must be under 150 characters — one concise sentence identifying the key fact.
 4. OUTPUT FORMAT: You MUST follow this exact format — nothing else before or after:
 
 <think>
@@ -42,6 +43,16 @@ Step-by-step reasoning: identify the key facts from the report that answer the q
 
 IMPORTANT: The <answer> tag must appear EXACTLY ONCE in your response and contain ONLY \
 the final answer — no prefixes like "Answer:", no quotes, no extra whitespace."""
+
+# 强制猜测模式追加指令（最后一轮时注入）
+_FORCE_GUESS_ADDENDUM = """\
+
+CRITICAL OVERRIDE — LAST RESORT MODE:
+The research has exhausted all retrieval rounds. You MUST provide your best guess.
+- NEVER output "Not found", "Unknown", "Cannot determine", or any similar non-answer.
+- If the report contains partial clues, infer the most likely answer from them.
+- If truly no clue exists, output the most plausible answer based on general knowledge.
+- A specific guess (even if uncertain) is always better than a non-answer for scoring purposes."""
 
 _USER_TMPL = """\
 QUESTION: {question}
@@ -116,6 +127,7 @@ def extract_answer(
     draft: str,
     client: Any = None,
     model: str | None = None,
+    force_guess: bool = False,
 ) -> Dict[str, str]:
     """从草稿中提取简短答案和 CoT 思维链。
 
@@ -137,16 +149,17 @@ def extract_answer(
         ans, cot = _fallback_answer(draft)
         return {"final_answer": ans, "cot_reasoning": cot}
 
+    system_prompt = _SYSTEM_PROMPT + (_FORCE_GUESS_ADDENDUM if force_guess else "")
     user_msg = _USER_TMPL.format(question=question, draft_snippet=draft_snippet)
     try:
         resp = _client.chat.completions.create(
             model=_model,
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.0,
-            max_tokens=1024,
+            max_tokens=256,
         )
         raw = resp.choices[0].message.content or ""
 
@@ -155,6 +168,7 @@ def extract_answer(
         answer_match = _RE_ANSWER.search(raw)
 
         cot = think_match.group(1).strip() if think_match else ""
+        cot = cot[:150]
         final_answer = _clean_answer(answer_match.group(1)) if answer_match else ""
 
         # ── Step 2：<answer> 未匹配时的兜底策略 ──────────────────────────────

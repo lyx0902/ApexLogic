@@ -49,7 +49,7 @@ _LLM_JUDGE_SYSTEM = """\
 {
   "correct": true 或 false,
   "confidence": 0.0~1.0 之间的浮点数,
-  "reason": "一句话说明判断依据"
+  "reason": "判断依据，不超过100字"
 }
 不要输出任何其他内容。"""
 
@@ -98,7 +98,7 @@ def llm_judge(
         return {
             "correct": bool(result.get("correct", False)),
             "confidence": float(result.get("confidence", 0.0)),
-            "reason": str(result.get("reason", "")),
+            "reason": str(result.get("reason", ""))[:200],
         }
     except Exception as exc:  # noqa: BLE001
         return {"correct": False, "confidence": 0.0, "reason": f"LLM judge 失败: {exc}"}
