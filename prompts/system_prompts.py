@@ -229,7 +229,7 @@ def build_iterative_reasoning_prompt(
     """
     # 最多展示 8 条，每条取 title + core_summary（精简 token 消耗）
     ctx_chunks: List[str] = []
-    for i, item in enumerate(contexts[:8], start=1):
+    for i, item in enumerate(contexts[:12], start=1):
         if isinstance(item, dict):
             cid = item.get("citation_id", f"S{i}")
             title = (item.get("title", "") or "")[:80]
@@ -237,10 +237,10 @@ def build_iterative_reasoning_prompt(
                 item.get("core_summary", "")
                 or item.get("content", "")
                 or ""
-            )[:300]
+            )[:400]
             ctx_chunks.append(f"[{cid}] {title}\n  {summary}")
         else:
-            ctx_chunks.append(f"[S{i}] {str(item)[:300]}")
+            ctx_chunks.append(f"[S{i}] {str(item)[:400]}")
 
     ctx_text = "\n\n".join(ctx_chunks) if ctx_chunks else "（暂无检索结果）"
 
@@ -248,7 +248,7 @@ def build_iterative_reasoning_prompt(
     if existing_reasoning:
         prior_block = (
             f"\n\n【前序推理链（第 {hop} 跳前已知结论）】\n"
-            f"{existing_reasoning[:500]}"
+            f"{existing_reasoning[:800]}"
         )
 
     return (

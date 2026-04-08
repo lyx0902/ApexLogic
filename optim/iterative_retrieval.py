@@ -369,7 +369,7 @@ class IterativeRetrievalOptimizer:
                 working_contexts = list(working_contexts) + [
                     {
                         "title": r.get("title", ""),
-                        "core_summary": (r.get("content", "") or "")[:300],
+                        "core_summary": (r.get("content", "") or "")[:400],
                         "content": r.get("content", ""),
                         "source": r.get("source", "duckduckgo"),
                         "url": r.get("url", ""),
