@@ -103,7 +103,7 @@ def main():
     t_total_start = time.perf_counter()
     correct_count = 0
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures_to_idx = {executor.submit(evaluate_single, i, item, args.provider, args.scorer): i for i, item in enumerate(items)}
         for f in as_completed(futures_to_idx):
             idx = futures_to_idx[f]
