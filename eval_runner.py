@@ -116,14 +116,13 @@ def _llm_judge_with_retry(
     return llm_judge(question=question, pred=pred, gold=gold, client=client, model=model)
 
 
-# ─── search_stats 裁剪：只保留 retriever top20 / reranker top10 元数据 ──────────
+# ─── search_stats 裁剪：只保留 reranker top10 元数据 ────────────────────────────
 
 def _trim_search_stats(source_quality_summary: Dict[str, Any]) -> Dict[str, Any]:
     """从完整的 source_quality_summary 中裁剪出轻量版 search_stats。
 
     只保留：
-      - retriever: 统计数字 + selected_records（top20 元数据：rank/title/source/url/score）
-      - reranker:  统计数字 + selected_records（top10 元数据：rank/title/source/url/score）
+      - reranker: 统计数字 + selected_records（top10 元数据：rank/title/source/url/score）
     丢弃 dropped_records / dropped_samples / selected_samples 等冗余字段，节省 token。
     """
     bge: Dict[str, Any] = source_quality_summary.get("bge_summary", {})
@@ -140,11 +139,9 @@ def _trim_search_stats(source_quality_summary: Dict[str, Any]) -> Dict[str, Any]
             slim["selected_records"] = stage["selected_records"]
         return slim
 
-    retriever_raw: Dict[str, Any] = bge.get("retriever", {})
     reranker_raw: Dict[str, Any] = bge.get("reranker", {})
 
     return {
-        "retriever": _slim_stage(retriever_raw),
         "reranker": _slim_stage(reranker_raw),
         # 保留顶层轻量统计，便于论文表格使用
         "dedup_total": bge.get("dedup_total"),
@@ -347,6 +344,7 @@ def run_eval(
 
     summary = {
         "dataset": dataset_name,
+        "level": difficulty,
         "total": total_count,
         "correct": correct_count,
         "accuracy": round(accuracy, 4),

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 import requests
@@ -18,34 +17,30 @@ def _pack_ranked_items(
     selected = ranked_items[: max(top_k, 0)]
     dropped = ranked_items[max(top_k, 0) :]
 
-    timestamp = datetime.now().isoformat(timespec="seconds")
-
-    def _to_view(item: Dict[str, Any], rank: int, reason: str) -> Dict[str, Any]:
+    def _to_view(item: Dict[str, Any], rank: int) -> Dict[str, Any]:
         return {
             "rank": rank,
             "title": str(item.get("title", ""))[:140],
             "source": str(item.get("source", "")),
             "url": str(item.get("url", "")),
             "score": float(item.get(score_key, 0.0)),
-            "reason": reason,
-            "timestamp": timestamp,
         }
 
     selected_view = [
-        _to_view(item, idx, "selected_top_k")
+        _to_view(item, idx)
         for idx, item in enumerate(selected[:sample_limit], start=1)
     ]
     dropped_view = [
-        _to_view(item, idx + len(selected), "rank_below_top_k")
+        _to_view(item, idx + len(selected))
         for idx, item in enumerate(dropped[:sample_limit], start=1)
     ]
 
     selected_full = [
-        _to_view(item, idx, "selected_top_k")
+        _to_view(item, idx)
         for idx, item in enumerate(selected, start=1)
     ]
     dropped_full = [
-        _to_view(item, idx + len(selected), "rank_below_top_k")
+        _to_view(item, idx + len(selected))
         for idx, item in enumerate(dropped, start=1)
     ]
 
