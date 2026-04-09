@@ -81,6 +81,7 @@ def main():
     parser.add_argument("--level", choices=["easy", "medium", "hard"], default=None)
     parser.add_argument("--split", choices=["auto", "train", "validation", "test"], default="auto")
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--skip", type=int, default=0)
     parser.add_argument("--scorer", choices=["em", "llm"], default="llm")
     parser.add_argument("--output-dir", type=Path, default=Path("tests"))
     args = parser.parse_args()
@@ -90,10 +91,12 @@ def main():
     # 与 evals/datasets.py 接口保持一致：使用 difficulty 字段名。
     items = load_eval_dataset(
         args.dataset,
-        limit=args.limit,
+        limit=args.limit + args.skip,
         difficulty=args.level,
         split=None if args.split == "auto" else args.split,
     )
+    if args.skip:
+        items = items[args.skip:]
 
     if not items:
         print("[baseline] 未加载到题目，请检查 dataset/level/split 组合")
@@ -116,7 +119,7 @@ def main():
     accuracy = correct_count / len(items) if items else 0.0
 
     output = {
-        "meta": {"provider": args.provider, "dataset": args.dataset, "level": args.level, "total": len(items), "correct": correct_count, "accuracy": round(accuracy, 4), "total_elapsed_seconds": round(total_elapsed, 2)},
+        "meta": {"provider": args.provider, "dataset": args.dataset, "level": args.level, "skip": args.skip, "total": len(items), "correct": correct_count, "accuracy": round(accuracy, 4), "total_elapsed_seconds": round(total_elapsed, 2)},
         "results": results
     }
 
