@@ -25,7 +25,7 @@ def get_commercial_client_and_model(provider: str):
     if provider == "qwen":
         api_key = _require_env("QWEN_API_KEY")
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        model = "qwen-max"
+        model = "qwen3-max"
         return OpenAI(api_key=api_key, base_url=base_url), model
     elif provider == "doubao":
         api_key = _require_env("DOUBAO_API_KEY")

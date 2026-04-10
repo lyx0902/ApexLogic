@@ -1,0 +1,513 @@
+{
+  "meta": {
+    "provider": "doubao",
+    "dataset": "hotpotqa",
+    "level": "easy",
+    "total": 50,
+    "correct": 40,
+    "accuracy": 0.8,
+    "total_elapsed_seconds": 420.57
+  },
+  "results": [
+    {
+      "id": 0,
+      "question": "Who was once considered the best kick boxer in the world, however he has been involved in a number of controversies relating to his \"unsportsmanlike conducts\" in the sport and crimes of violence outside of the ring.",
+      "ground_truth": "Badr Hari",
+      "raw_draft": "The most high-profile figure matching this description is **Badr Hari**, the Moroccan-Dutch former K-1 Heavyweight kickboxing champion:\n### 1. Peak standing in the sport\nAt his prime in the late 2000s and early 2010s, Hari was widely ranked the *best heavyweight kickboxer in the world* by leading combat sports outlets including LiverKick and Combat Press, and was frequently cited as one of the most talented knockout artists in kickboxing history, with a record of 106 wins (92 by KO) across his career.\n### 2. In-ring unsportsmanlike conduct controversies\nHe has been disqualified repeatedly for extreme unsportsmanlike behavior, including:\n- Kicking opponent Remy Bonjasky in the head while Bonjasky was already knocked down on the mat during the 2008 K-1 World Grand Prix final\n- Stomping a downed Alistair Overeem in a 2009 bout\n- Instigating post-fight brawls with opponents and their corners after matches\n### 3. Violent crimes outside the ring\nHari has an extensive criminal record for violent offenses, including multiple convictions for aggravated assault: he was sentenced to 18 months in prison in 2014 for assaulting a nightclub bouncer, and handed a further 2-year prison sentence in 2017 for a string of violent attacks including assaulting his ex-girlfriend, beating a partygoer so severely they suffered permanent facial and cognitive injuries, and assaulting a stranger during a road rage incident.",
+      "final_answer": "Badr Hari",
+      "cot_reasoning": "The report identifies Badr Hari as the former world's best kickboxer with unsportsmanlike conduct and violent crime controversies.",
+      "is_correct": true,
+      "elapsed_seconds": 37.87
+    },
+    {
+      "id": 1,
+      "question": "In which American football game was Malcolm Smith named Most Valuable player?",
+      "ground_truth": "Super Bowl XLVIII",
+      "raw_draft": "### Final Answer\nMalcolm Smith was named Most Valuable Player of **Super Bowl XLVIII**, the National Football League (NFL) 2013 season championship game.\n---\n### Supporting Details\n1.  The game was played on February 2, 2014 at MetLife Stadium in East Rutherford, New Jersey, pitting the NFC champion Seattle Seahawks (Smith's team at the time) against the AFC champion Denver Broncos.\n2.  The Seahawks won in a 43-8 blowout. Smith, a linebacker, earned MVP honors after recording 10 combined tackles, a 69-yard interception return for a touchdown off Peyton Manning, and a fumble recovery. He was only the seventh defensive player in history to win Super Bowl MVP at the time.",
+      "final_answer": "Super Bowl XLVIII",
+      "cot_reasoning": "Malcolm Smith was MVP of Super Bowl XLVIII.",
+      "is_correct": true,
+      "elapsed_seconds": 20.86
+    },
+    {
+      "id": 2,
+      "question": "What are the names of the current members of  American heavy metal band who wrote the music for  Hurt Locker The Musical? ",
+      "ground_truth": "Hetfield and Ulrich, longtime lead guitarist Kirk Hammett, and bassist Robert Trujillo.",
+      "raw_draft": "### Context Clarification First\nAs of 2024, there is no official, professionally produced *Hurt Locker: The Musical*. The reference almost certainly stems from a viral 2022 April Fools' Day prank posted by Broadway World that claimed iconic American thrash metal band **Anthrax** would compose the score for a stage adaptation of the film *The Hurt Locker*—the prank was widely shared as factual online, leading to widespread association between Anthrax and the hypothetical musical.\n---\n### Current (2024) official members of Anthrax:\n1. **Scott Ian**: Rhythm guitar, backing vocals (founding member, active 1981–present)\n2. **Charlie Benante**: Drums, percussion, additional guitars (active 1983–present)\n3. **Frank Bello**: Bass, backing vocals (active 1984–present, with a very brief 2004-2005 hiatus)\n4. **Joey Belladonna**: Lead vocals (active 1984–1992, 2005–2007, 2010–present, third tenure with the band)\n5. **Jon Donais**: Lead guitar, backing vocals (active 2013–present, formerly of Shadows Fall)\n\nIf referencing the 2014 *Saturday Night Live* parody sketch of *Hurt Locker: The Musical*, no heavy metal band was involved in writing its original sketch music, which was created by SNL's in-house writing team.",
+      "final_answer": "Scott Ian, Charlie Benante, Frank Bello, Joey Belladonna, Jon Donais",
+      "cot_reasoning": "The question refers to the viral prank linking Anthrax to \"Hurt Locker The Musical.\" The report lists the current 2024 members of Anthrax.",
+      "is_correct": false,
+      "elapsed_seconds": 97.48
+    },
+    {
+      "id": 3,
+      "question": "Dua Lipa, an English singer, songwriter and model, the album spawned the number-one single \"New Rules\" is a song by English singer Dua Lipa from her eponymous debut studio album, released in what year?",
+      "ground_truth": "2017",
+      "raw_draft": "### 推理过程\n1. 首先明确问题核心：查询收录了冠军单曲《New Rules》的Dua Lipa同名首张录音室专辑的发行年份（问题表述存在句式杂糅，也可同步核实单曲本身的发行时间）。\n2. 第一步检索Dua Lipa同名首张专辑《Dua Lipa》的官方发行信息：该专辑标准版于2017年6月2日通过华纳唱片正式发行，2018年曾推出增补曲目的完全版，但业内默认的专辑主发行年份为2017年。\n3. 第二步交叉验证《New Rules》的属性：该曲目确实是这张同名专辑的第七支推广单曲，2017年7月7日正式作为单曲发行，后续登顶英国官方单曲榜，是Dua Lipa的首支英国冠军单曲，完全匹配问题描述。\n\n### 最终结论\n无论是这张同名首张专辑，还是单曲《New Rules》，发行年份均为**2017年**。其中专辑标准版发行于2017年6月，《New Rules》单曲发行于2017年7月。",
+      "final_answer": "2017",
+      "cot_reasoning": "The question asks for the release year of Dua Lipa's debut album that spawned \"New Rules\". The report states the album was released in 2017.",
+      "is_correct": true,
+      "elapsed_seconds": 42.08
+    },
+    {
+      "id": 4,
+      "question": "American politician Joe Heck ran unsuccessfully against Democrat Catherine Cortez Masto, a woman who previously served as the 32nd Attorney General of where?",
+      "ground_truth": "Nevada",
+      "raw_draft": "### 推理过程\n1. 首先确认竞选背景：2016年美国内华达州联邦参议员选举中，共和党籍政客Joe Heck作为候选人参选，最终负于民主党候选人Catherine Cortez Masto，后者成功接任退休的民主党参议员哈里·里德的席位。\n2. 检索Catherine Cortez Masto的公开履历：她在参选参议员之前，2007年-2015年期间担任公职，是该州历史上首位女性总检察长，头衔明确为**第32任内华达州总检察长**。\n\n### 最终结论\nNevada（内华达州，美国）。",
+      "final_answer": "Nevada",
+      "cot_reasoning": "The question asks where Catherine Cortez Masto served as the 32nd Attorney General. The report states she was the 32nd Attorney General of Nevada.",
+      "is_correct": true,
+      "elapsed_seconds": 24.81
+    },
+    {
+      "id": 5,
+      "question": "Which  American politician did Donahue replaced ",
+      "ground_truth": "Kelli Ward",
+      "raw_draft": "### Context & Most Common Answer\nThe most widely referenced case (and standard trivia answer) to this question refers to iconic talk show host **Phil Donahue** replacing former American politician *Jesse Ventura*:\n- Jesse Ventura is a prominent independent politician who served as Governor of Minnesota from 1999 to 2003, after a career as a professional wrestler and actor.\n- In 2002, MSNBC canceled Ventura's low-rated weekend current affairs show *Jesse Ventura's America* and awarded the prime time slot to Phil Donahue for his new eponymous weeknight talk show focused on news and political debate.\n\n---\n### Other Less Prominent Cases (If referencing a politician named Donahue)\nIf the question refers to an elected official named Donahue replacing another politician in public office:\n1. **Jeremiah Donahue (D-NY)**, who served in the U.S. House of Representatives from 1883 to 1885, defeated and replaced incumbent Republican Levi P. Morton, who later served as Vice President of the United States under President Benjamin Harrison.\n2. **Daniel Donahue (D-MA)**, a member of the Massachusetts House of Representatives, won a 2013 special election to replace fellow Democrat John Fresolo, who resigned earlier that year amid an ethics investigation.\n\nThe Jesse Ventura answer is the most well-documented and widely recognized response to this general question.",
+      "final_answer": "Jesse Ventura",
+      "cot_reasoning": "The question asks which American politician Donahue replaced. The report states Phil Donahue replaced politician Jesse Ventura's show on MSNBC.",
+      "is_correct": false,
+      "elapsed_seconds": 114.96
+    },
+    {
+      "id": 6,
+      "question": "New Faces of 1952 is a musical revue with songs and comedy skits, it helped jump start the career of which young performer, and American actress?",
+      "ground_truth": "Carol Lawrence",
+      "raw_draft": "### 推理过程\n要确定《New Faces of 1952》捧红的美国女演员，首先需要明确这部百老汇时事讽刺剧的核心定位：它是制作人伦纳德·西尔曼（Leonard Sillman）「New Faces」新人发掘系列中最成功的版本，核心功能就是推出未成名的演艺新人。\n通过检索该剧的演职人员履历和行业记载可以发现：\n1. 该剧1952年百老汇首演时，最出圈的表演是新人**Eartha Kitt（厄莎·姬特）**演唱的原创曲目《Monotonous》，这段表演是全剧的标志性亮点，直接让她进入主流视野。\n2. 厄莎·姬特是土生土长的美国演员、歌手，此前几乎没有公开知名度，正是通过这部剧开启了她横跨70年的舞台、影视、音乐职业生涯，后续她成为知名文化符号，代表作包括1960版《蝙蝠侠》的猫女、《公主与青蛙》配音、多首白金销量音乐作品，还是知名社会活动家。\n3. 同期剧中还有其他新人（比如喜剧演员保罗·林德、女演员爱丽丝·戈斯特利），但厄莎·姬特是该剧捧红的知名度最高、职业跨度最广的美国女演员，也是各类史料中明确标注的该系列最成功的发掘成果。\n\n---\n### 最终结论\n这部剧最核心的意义是捧红了**厄莎·姬特（Eartha Kitt，全名Eartha Mae Keith）**，她是美国传奇女演员、歌手、舞蹈家，也是20世纪最具影响力的黑人表演艺术家之一。",
+      "final_answer": "Eartha Kitt",
+      "cot_reasoning": "The report identifies Eartha Kitt as the young American actress whose career was launched by New Faces of 1952.",
+      "is_correct": false,
+      "elapsed_seconds": 46.56
+    },
+    {
+      "id": 7,
+      "question": "750 7th Avenue and 101 Park Avenue, are located in which city?",
+      "ground_truth": "New York City",
+      "raw_draft": "### 推理过程\n1. 首先检索地址「750 7th Avenue」：公开的地产、商业登记信息显示，该地址是美国纽约曼哈顿中城的知名商用写字楼，坐落于第七大道与西49街交叉口，属于纽约核心商务区的物业。\n2. 再检索地址「101 Park Avenue」：该地址是纽约曼哈顿中城的标志性商用摩天楼，位于公园大道与东40街交叉口，同样是纽约核心商务区的知名办公物业。\n3. 交叉验证：没有其他主流城市同时存在对应编号的第七大道、公园大道匹配地址，两个地址的归属地一致。\n\n### 最终结论\n这两个地址都位于**美国纽约州纽约市（New York City, NY, USA）**，具体都在曼哈顿中城区域。",
+      "final_answer": "New York City",
+      "cot_reasoning": "Both addresses are in New York City.",
+      "is_correct": true,
+      "elapsed_seconds": 32.05
+    },
+    {
+      "id": 8,
+      "question": "Which actress played the part of fictitious character Kimberly Ann Hart, in the franchise built around a live action superhero television series taking much of its footage from the Japanese tokusatsu 'Super Sentai'?",
+      "ground_truth": "Amy Jo Johnson",
+      "raw_draft": "### Reasoning Process\n1. **First, identify the referenced franchise**: The only major live-action superhero franchise that sources large amounts of fight and action footage from the Japanese *Super Sentai* tokusatsu franchise is the *Power Rangers* franchise, launched globally with the 1993 TV series *Mighty Morphin Power Rangers*.\n2. **Confirm the character context**: Kimberly Ann Hart is the iconic original Pink Ranger of the core *Mighty Morphin Power Rangers* lineup, one of the most recognizable characters from the early era of the franchise.\n3. **Match actress to the role**: The original, most widely associated actress to portray Kimberly Ann Hart in the main TV-led continuity of the franchise is **Amy Jo Johnson**, who played the character from 1993 to 1995 across the original series, the 1995 *Mighty Morphin Power Rangers: The Movie*, and returned for guest appearances in later entries including the 2023 30th anniversary special *Mighty Morphin Power Rangers: Once & Always*.\n   *Note: Naomi Scott played an alternate universe version of Kimberly in the 2017 standalone *Power Rangers* theatrical reboot, but this is outside the core TV franchise the question references.*\n\n### Final Answer\nAmy Jo Johnson (original core portrayal, main TV franchise continuity) is the actress in question.",
+      "final_answer": "Amy Jo Johnson",
+      "cot_reasoning": "The question asks for the actress who played Kimberly Ann Hart in the Power Rangers franchise, which uses Super Sentai footage. The report identifies ",
+      "is_correct": true,
+      "elapsed_seconds": 36.31
+    },
+    {
+      "id": 9,
+      "question": "The Royal Commission into Drug Trafficking (1977–1979) or Woodward Royal Commission was a royal commission initiated by the New South Wales Government to investigate drug trafficking in New South Wales, Australia, especially links between the New South Wales Police and Mafia, The Honoured Society, is a Calabrian 'Ndrangheta criminal confederation, started in Melbourne and currently active in all of which country?  ",
+      "ground_truth": "Australia",
+      "raw_draft": "### 推理过程\n1. 首先定位语境关联：问题前置背景全部围绕澳大利亚新南威尔士州的伍德沃德皇家贩毒调查委员会展开，其中提到的\"The Honoured Society\"是特指活跃在澳洲的意大利'Ndrangheta（光荣会）分支。\n2. 核实该分支的起源与扩张轨迹：通过检索澳大利亚犯罪情报委员会（ACIC）公开报告、澳洲犯罪学研究资料可确认，该卡拉布里亚裔犯罪组织由20世纪初移民带入澳大利亚，最早在墨尔本形成成熟运作架构，之后逐步向全澳渗透扩张。\n3. 确认当前活动范围：目前该组织在澳大利亚所有州和领地都建立了犯罪网络，涉及跨州贩毒、勒索、洗钱、农业产业垄断等犯罪活动，是澳洲活跃的核心有组织犯罪集团之一。\n\n### 最终结论\n该组织目前在全**澳大利亚（Australia）**活跃。",
+      "final_answer": "Australia",
+      "cot_reasoning": "The question asks about the country where 'Ndrangheta is currently active after starting in Melbourne. The report states it is active across all of Au",
+      "is_correct": true,
+      "elapsed_seconds": 34.93
+    },
+    {
+      "id": 10,
+      "question": "The 337th Flight Test Squadron (337 FLTS) was most recently part of the 46th Test Wing and based at McClellan Air Force Base, a former United States Air Force base located in the North Highlands area of Sacramento County, in which US state?",
+      "ground_truth": "California",
+      "raw_draft": "### 推理过程\n1. 首先定位问题中的核心地理标识：萨克拉门托县（Sacramento County），萨克拉门托本身是美国加利福尼亚州的州府，属于加利福尼亚州下辖的县级行政单位。\n2. 交叉验证麦克莱伦空军基地（McClellan Air Force Base）的公开驻地信息：该基地确实位于加利福尼亚州萨克拉门托县的北高地区域，基地关闭后现已改建为麦克莱伦商业园区。\n\n### 最终结论\n加利福尼亚州（California，简称加州）。",
+      "final_answer": "California",
+      "cot_reasoning": "The question asks for the US state where McClellan Air Force Base is located. The report states it is in Sacramento County, which is in California.",
+      "is_correct": true,
+      "elapsed_seconds": 18.43
+    },
+    {
+      "id": 11,
+      "question": "Which faith is designated to the University of Providence, private university accredited by the NW association of Schools and Colleges and located in a third largest city in Montana after being passed by Missoula? ",
+      "ground_truth": "Roman Catholic",
+      "raw_draft": "### Step-by-Step Reasoning\n1. **Identify the referenced Montana city**: Montana's largest cities by population rank 1. Billings, 2. Missoula, 3. Great Falls. Historical demographic records confirm Great Falls was the state's second-largest city until Missoula surpassed it in the early 2000s, matching the location clue.\n2. **Confirm the university**: The only University of Providence in Great Falls, Montana, was formerly named the University of Great Falls until 2017. It is a private institution regionally accredited by the Northwest Commission on Colleges and Universities, the modern successor to the Northwest Association of Schools and Colleges cited in the question.\n3. **Verify its religious designation**: The university was founded in 1932 by the Sisters of Providence, a Roman Catholic religious institute, and remains officially affiliated with the Roman Catholic (Catholic Christian) faith, sponsored by the Sisters of Providence to this day.\n\n---\n### Final Conclusion\nThe University of Providence is designated as a **Roman Catholic (Catholic Christian)** institution, rooted in the tradition of the Roman Catholic Sisters of Providence.",
+      "final_answer": "Roman Catholic",
+      "cot_reasoning": "The University of Providence in Great Falls is a Catholic institution founded by the Sisters of Providence.",
+      "is_correct": true,
+      "elapsed_seconds": 35.69
+    },
+    {
+      "id": 12,
+      "question": "Don Barry Mason was the founder of the Psychedelic Shamanistic Institute (PSI), which other member that's Welsh, that died on 10 April 2016?",
+      "ground_truth": "Dennis Howard Marks",
+      "raw_draft": "### Step-by-Step Reasoning\n1. **First, filter for candidates matching core criteria**: We searched for Welsh figures active in psychedelic/shamanistic advocacy circles who died on 10 April 2016. The only high-profile match for these parameters is *Dennis Howard Marks*, popularly known by his alias *Mr. Nice*.\n2. **Verify connection to the Psychedelic Shamanistic Institute (PSI)**: We cross-referenced membership and affiliate records for PSI, founded by Don Barry Mason, confirming Howard Marks was a prominent, publicly listed associate/member of the organization, focused on drug policy reform and psychedelic research alongside Mason.\n3. **Confirm all criteria alignment**:\n   - Welsh nationality: Marks was born in Kenfig Hill, Glamorgan, Wales, and consistently identified as Welsh throughout his public life.\n   - Date of death: Official records confirm he died of colorectal cancer on 10 April 2016, aged 70.\n   - PSI affiliation: He was a core public-facing member of the institute alongside founder Don Barry Mason.\n\n---\n### Final Answer\nThe person in question is **Howard Marks (full name Dennis Howard Marks, best known by his nickname \"Mr. Nice\")**, the famous Welsh drug policy reform advocate, author, and former cannabis smuggler.",
+      "final_answer": "Howard Marks",
+      "cot_reasoning": "Identify Welsh PSI member who died April 10, 2016.",
+      "is_correct": true,
+      "elapsed_seconds": 41.99
+    },
+    {
+      "id": 13,
+      "question": "What male actor starred in The Messenger?",
+      "ground_truth": "Robert Sheehan",
+      "raw_draft": "There are multiple major films titled *The Messenger*, so the lead male stars vary by production:\n### The most widely referenced unsubtitled *The Messenger* is the 2009 American war drama:\n- **Ben Foster** is the lead male star, playing central protagonist U.S. Army Staff Sergeant Will Montgomery, an injured veteran assigned to the military's casualty notification service.\n- **Woody Harrelson** co-stars as his partner Captain Tony Stone, and earned an Academy Award nomination for Best Supporting Actor for this performance.\n\n---\n### Other common *The Messenger* productions:\n1. 1999 historical drama *The Messenger: The Story of Joan of Arc* (often shortened to *The Messenger*): Lead male actors include John Malkovich (as Charles VII of France), Dustin Hoffman (as the unnamed Conscience), and Vincent Cassel (as Gilles de Rais).\n2. 2015 British supernatural horror *The Messenger*: Lead male star is Robert Sheehan, playing a young man who can communicate with the ghosts of recently deceased people.",
+      "final_answer": "Ben Foster",
+      "cot_reasoning": "The question asks for the male actor starring in The Messenger, referring to the 2009 war drama, where Ben Foster is the lead male star.",
+      "is_correct": false,
+      "elapsed_seconds": 35.71
+    },
+    {
+      "id": 14,
+      "question": "In what show did Cynthia Nixon receive the 2004 Primetime Emmy Award for Outstanding Supporting Actress in a Comedy Series and a Screen Actors Guild Award for her performance?",
+      "ground_truth": "Sex and the City",
+      "raw_draft": "### Final Answer: *Sex and the City*\n---\n### Supporting Details:\n1.  Cynthia Nixon won the 2004 Primetime Emmy Award for Outstanding Supporting Actress in a Comedy Series for her portrayal of cynical lawyer Miranda Hobbes on the hit HBO comedy *Sex and the City* (which ran 1998–2004), specifically for her work in the show's final season.\n2.  For her performance as Miranda on the same series, Nixon also shared three consecutive Screen Actors Guild Awards for Outstanding Performance by an Ensemble in a Comedy Series (2002, 2003, 2004) with her core co-stars Sarah Jessica Parker, Kim Cattrall, and Kristin Davis, matching the timeline of her 2004 Emmy win.",
+      "final_answer": "Sex and the City",
+      "cot_reasoning": "The report states Nixon won the 2004 Emmy for her role in \"Sex and the City\" and also won SAG Awards for her performance on the same series.",
+      "is_correct": true,
+      "elapsed_seconds": 34.53
+    },
+    {
+      "id": 15,
+      "question": "The 1895/96 Football League season was the eighth in Football League history with Everton, their Goodison Park home, is a football stadium located in Walton, Liverpool, in which country?",
+      "ground_truth": "England",
+      "raw_draft": "### Reasoning Process\n1. First, we map the geographic identifiers given: Walton is an inner district of the city of Liverpool. Liverpool is situated in the North West region of England, one of the four constituent countries of the sovereign United Kingdom of Great Britain and Northern Ireland.\n2. The question is framed in a football context, referencing the 1895/96 English Football League season. For football governance purposes, England is recognized as an independent national football jurisdiction (with its own FA, separate FIFA/UEFA membership, and domestic league system) separate from the other constituent countries of the UK.\n\n### Final Conclusion\nIn the football context referenced by the question, Goodison Park is located in **England**. If referring to the sovereign state governing the territory, it is part of the United Kingdom of Great Britain and Northern Ireland.",
+      "final_answer": "England",
+      "cot_reasoning": "The question asks for the country of Goodison Park in Liverpool; the report states it's in England.",
+      "is_correct": true,
+      "elapsed_seconds": 39.98
+    },
+    {
+      "id": 16,
+      "question": "Roger Avary (born August 23, 1965) is a Canadian film and television producer, screenwriter and director in the American mass media industry, he wrote the screenplay for Beowulf, a 2007 British-American 3D motion capture epic fantasy film, directed by who?",
+      "ground_truth": "Robert Zemeckis",
+      "raw_draft": "### 推理过程\n首先根据你提供的「2007年英美合拍、3D动作捕捉、史诗奇幻、Roger Avary担任编剧」的核心信息，定位到对应《贝奥武夫》项目的公开主创资料，确认其导演身份：\n---\n### 最终结论\n这部2007版《贝奥武夫》的导演是**罗伯特·泽米吉斯（Robert Zemeckis）**，他是美国知名导演，代表作还包括《阿甘正传》《回到未来》系列、《荒岛余生》等，该片也是他继《极地特快》之后，第二部使用全真人动作捕捉技术拍摄的长片作品，剧本由Roger Avary和知名奇幻作家尼尔·盖曼联合改编自古英语同名史诗。",
+      "final_answer": "Robert Zemeckis",
+      "cot_reasoning": "The question asks who directed the 2007 film \"Beowulf\" written by Roger Avary. The report states the director is Robert Zemeckis.",
+      "is_correct": true,
+      "elapsed_seconds": 28.9
+    },
+    {
+      "id": 17,
+      "question": "\"Funnybot\" is the second episode of the fifteenth season of which American animated television series, created by Trey Parker and Matt Stone?  ",
+      "ground_truth": "South Park",
+      "raw_draft": "### Reasoning Process\n1. First, we identify that Trey Parker and Matt Stone are the co-creators of the long-running flagship adult animated sitcom *South Park*, which is their most prominent ongoing animated television work.\n2. We verify the episode list for the 15th season of *South Park*, which originally aired in 2011: the first episode of the season is *HumancentiPad*, and the second episode, premiering on May 4, 2011, is explicitly titled *Funnybot*.\n3. No other animated series created by Parker and Stone has run for 15 seasons, so no other work from the pair fits the description.\n\n---\n### Final Answer\n*South Park*",
+      "final_answer": "South Park",
+      "cot_reasoning": "The question asks for the series where \"Funnybot\" is the second episode of season 15, created by Trey Parker and Matt Stone. The report identifies tha",
+      "is_correct": true,
+      "elapsed_seconds": 27.22
+    },
+    {
+      "id": 18,
+      "question": "Which private research university is located in Chestnut Hill, Massachusetts Boston College or Stanford University? ",
+      "ground_truth": "Boston College",
+      "raw_draft": "### Final Answer: Boston College\n---\n### Reasoning:\n1. **Location verification for both institutions**:\n   - Boston College is a private Jesuit research university whose main campus is explicitly located in Chestnut Hill, Massachusetts, an unincorporated suburban community roughly 6 miles west of downtown Boston. Its official mailing address is listed as Chestnut Hill, MA.\n   - Stanford University, while also a top private research university, is located in Stanford, California, in the heart of Silicon Valley in the San Francisco Bay Area, more than 2,500 miles from Massachusetts.\n2. Both meet the \"private research university\" qualification, but only Boston College matches the specified Chestnut Hill, Massachusetts location.",
+      "final_answer": "Boston College",
+      "cot_reasoning": "Boston College is in Chestnut Hill, Massachusetts; Stanford is in California.",
+      "is_correct": true,
+      "elapsed_seconds": 21.39
+    },
+    {
+      "id": 19,
+      "question": "What American stage, film, and television actor  who also appeared in a large number of musicals, played Samson in the 1949 film \"Samson and Delilah\".",
+      "ground_truth": "Victor John Mature",
+      "raw_draft": "### Final Answer\nThe actor in question is **Victor Mature**.\n---\n### Supporting Verification:\n1. He was the lead star cast as Samson in Cecil B. DeMille's iconic 1949 epic *Samson and Delilah*, opposite Hedy Lamarr as Delilah.\n2. He was a Kentucky-born American actor who first trained and performed in over 100 stage productions at the Pasadena Community Playhouse early in his career, later had guest roles on hit TV series including *Combat!* and *The Red Skelton Hour*, and had a decades-long film career spanning the 1930s to 1980s.\n3. He starred in a large volume of hit 1940s musicals for 20th Century Fox, including *My Gal Sal*, *Song of the Islands*, *Footlight Serenade*, and *Seven Days' Leave*, opposite A-list musical stars of the era like Betty Grable and Rita Hayworth.",
+      "final_answer": "Victor Mature",
+      "cot_reasoning": "Victor Mature played Samson in the 1949 film \"Samson and Delilah.\"",
+      "is_correct": true,
+      "elapsed_seconds": 35.21
+    },
+    {
+      "id": 20,
+      "question": "Iqaluit Airport and Canadian North are based out of what country?",
+      "ground_truth": "Canada",
+      "raw_draft": "### Final Answer\nBoth Iqaluit Airport and Canadian North are based out of **Canada**.\n\n---\n### Supporting Verification\n1. **Iqaluit Airport**: It is the primary airport serving Iqaluit, the capital of Nunavut, an indigenous-majority federal territory of Canada in the eastern Arctic region.\n2. **Canadian North**: It is a Canada-based regional airline, headquartered in Calgary, Alberta, that specializes in passenger and cargo service to remote, northern, and Indigenous communities across Canada. Iqaluit Airport is one of its core operational hubs for Arctic service routes.",
+      "final_answer": "Canada",
+      "cot_reasoning": "Both entities are based in Canada according to the report.",
+      "is_correct": true,
+      "elapsed_seconds": 23.87
+    },
+    {
+      "id": 21,
+      "question": "Still Da Baddest is the fourth studio album by American rapper Trina, following the poor chart performance, \"I Got a Thang for You\" featuring which American singer/songwriter, record producer, business woman, and television personality, and was born in Oakland, California?",
+      "ground_truth": "Keyshia Cole",
+      "raw_draft": "### 推理过程\n1. 首先检索Trina单曲《I Got a Thang for You》的合作客座艺人，确认该曲目feat的艺人是Keyshia Cole。\n2. 核验Keyshia Cole的身份背景：她1981年10月15日出生于美国加利福尼亚州奥克兰，职业包含R&B创作歌手、唱片制作人、企业家，还曾主演BET知名真人秀《Keyshia Cole: The Way It Is》，完全符合题目中提到的全部身份、出生地特征。\n\n### 最终结论\n该艺人是**Keyshia Cole（琪夏·寇儿）**。",
+      "final_answer": "Keyshia Cole",
+      "cot_reasoning": "Identify the singer featured on \"I Got a Thang for You\" who matches the description: born in Oakland, California, and is a singer/songwriter, record p",
+      "is_correct": true,
+      "elapsed_seconds": 30.72
+    },
+    {
+      "id": 22,
+      "question": "what is the connection between Peter O'Meara and Norman Dike?",
+      "ground_truth": "Band of Brothers",
+      "raw_draft": "### Core Connection\nThe primary link between Peter O'Meara and Norman Dike is that **Irish actor Peter O'Meara portrayed real-life U.S. Army officer Norman Staunton Dike Jr. in the 2001 Emmy-winning HBO World War II miniseries *Band of Brothers***.\n\n---\n### Context for the connection:\n1. **Who Norman Dike was**:\n   Dike was a real 101st Airborne Division officer assigned to command Easy Company (2nd Battalion, 506th Parachute Infantry Regiment) during the 1944-1945 Battle of the Bulge. He is widely remembered for poor leadership during the Allied assault on the Belgian town of Foy, where he froze under enemy fire mid-attack and was relieved of command on the spot. Dike died in 1989, over a decade before *Band of Brothers* entered production.\n2. **Peter O'Meara's role**:\n   O'Meara appeared as Dike in two key episodes of the miniseries: *Episode 6 (Bastogne)* and *Episode 7 (The Breaking Point)*, the latter of which dramatizes the failed Foy attack that defined Dike's wartime reputation. There is no recorded personal, familial, or other off-screen connection between the real Dike and O'Meara.",
+      "final_answer": "Peter O'Meara portrayed Norman Dike in Band of Brothers",
+      "cot_reasoning": "Peter O'Meara portrayed Norman Dike in the miniseries Band of Brothers.",
+      "is_correct": true,
+      "elapsed_seconds": 34.26
+    },
+    {
+      "id": 23,
+      "question": "South Korean actor Kim Yool-ho starred in what 2016 movie directed by Yeon Sang-ho Yeon Sang-ho and starring actors Gong Yoo, Jung Yu-mi, and Ma Dong-seok?",
+      "ground_truth": "Train to Busan",
+      "raw_draft": "### 最终结论\n这部电影是**《釜山行》（韩文名：부산행 / 英文名：*Train to Busan*）**\n---\n### 推理验证过程\n1. 首先匹配核心限定条件：2016年上映、延相昊（Yeon Sang-ho）执导、孔刘（Gong Yoo）、郑裕美（Jung Yu-mi）、马东锡（Ma Dong-seok）主演的韩国电影，只有丧尸题材灾难片《釜山行》完全符合，该作是延相昊首部真人长片，2016年7月在韩国公映，也是亚洲知名度最高的丧尸影视作品之一。\n2. 进一步核验演员关联：金律豪（Kim Yool-ho，也译金律浩）确实参演了《釜山行》，在片中出演列车上的棒球队相关角色，符合问题描述的参演信息。",
+      "final_answer": "Train to Busan",
+      "cot_reasoning": "The 2016 movie directed by Yeon Sang-ho starring Gong Yoo, Jung Yu-mi, Ma Dong-seok, and featuring Kim Yool-ho is Train to Busan.",
+      "is_correct": true,
+      "elapsed_seconds": 33.99
+    },
+    {
+      "id": 24,
+      "question": "Which industry do Richard Hawley and Chicago's Catherine belong to? ",
+      "ground_truth": "rock band",
+      "raw_draft": "### Step 1: Verify the identities of the two entities\n1. **Richard Hawley**: The most prominent public figure of this name paired with a music act reference is the *English musician, singer-songwriter, and producer* born 1967. He first rose to fame as a member of 1990s indie band Longpigs, later served as a touring member of iconic UK band Pulp, and has released 8 critically acclaimed solo studio albums, plus produced records for other artists and contributed to film soundtracks.\n2. **Chicago's Catherine**: This refers to *Catherine*, a well-documented 1989-1998 American shoegaze/alternative rock band formed in Chicago, Illinois. They released two full-length studio albums via independent and major record labels, and toured widely across North America during their active career.\n### Step 2: Identify their shared industry\nBoth Richard Hawley and the band Catherine operate in the **music industry**, specifically the alternative/indie rock sub-sector, covering recorded music production, commercial music release, and live performance.\n---\nFinal answer: They both belong to the music (alternative/rock recording and performance) industry.",
+      "final_answer": "music industry",
+      "cot_reasoning": "Both are music artists: Richard Hawley is a musician, Catherine is a band.",
+      "is_correct": true,
+      "elapsed_seconds": 41.65
+    },
+    {
+      "id": 25,
+      "question": "The Swedish-British entertainment studio executive and film executive producer, who was the Executive producer for a 2016 American action thriller film directed by Babak Najafi, currently serve?",
+      "ground_truth": "CEO of Lionsgate UK & Europe",
+      "raw_draft": "### Step 1: Identify the 2016 Babak Najafi film referenced\nIranian-Swedish director Babak Najafi's only 2016 American action thriller release is *London Has Fallen*, the blockbuster sequel to Olympus Has Fallen starring Gerard Butler.\n---\n### Step 2: Match to the Swedish-British executive producer\nCross-referencing the executive producer credits for *London Has Fallen* against biographical details, the only candidate matching the description is **Zygi Kamasa**:\n- He was born in Stockholm, Sweden to a British father and Swedish mother, holding dual Swedish-British citizenship.\n- He is a veteran entertainment studio executive and prolific film executive producer with over 200 production credits to his name.\n---\n### Step 3: Current roles (as of 2024)\nAfter a 15-year tenure as CEO of Lionsgate UK & Europe, Kamasa stepped down in 2020. His current active positions are:\n1. **Founder and Chief Executive Officer (CEO) of True Brit Entertainment**: A UK-based theatrical distribution and production company he launched in 2022, exclusively focused on backing, producing, and releasing British feature film and television content.\n2. Board of Governors member of the British Film Institute (BFI): Appointed in 2020 for a 4-year term that remains active as of 2024.",
+      "final_answer": "Founder and CEO of True Brit Entertainment",
+      "cot_reasoning": "Identify Swedish-British executive producer of London Has Fallen (2016) and current roles.",
+      "is_correct": false,
+      "elapsed_seconds": 63.44
+    },
+    {
+      "id": 26,
+      "question": "an Emmy Award winner and two-time Tony Award winner, was on the episode 15 of the third season of \"Chuck\". what is her name ?",
+      "ground_truth": "Swoosie Kurtz",
+      "raw_draft": "### Step-by-Step Reasoning\n1. First, identify the relevant episode: *Chuck* Season 3 Episode 15 is titled \"Chuck Versus the Role Models\", originally aired April 26, 2010.\n2. Pull the guest cast for this episode: The core guest characters are a veteran spy couple, Craig Turner (played by Fred Willard) and Laura Turner, plus minor supporting guests.\n3. Filter for the female guest matching the awards criteria (Emmy winner, two-time Tony winner):\n   - The actress playing Laura Turner is **Swoosie Kurtz**.\n   - Verify her awards: She won *two Tony Awards for Best Featured Actress in a Play* (1981 for *Fifth of July*, 1986 for *The House of Blue Leaves*) and one Primetime Emmy Award (1990, Outstanding Guest Actress in a Comedy Series for *Carol & Company*), plus 10 further Emmy nominations. She fully fits the description.\n\n### Final Answer\nSwoosie Kurtz (full name: Susan Kurtz, professionally known as Swoosie Kurtz)",
+      "final_answer": "Swoosie Kurtz",
+      "cot_reasoning": "Identify the actress in Chuck S3E15 who is an Emmy winner and two-time Tony winner.",
+      "is_correct": true,
+      "elapsed_seconds": 45.04
+    },
+    {
+      "id": 27,
+      "question": "Prince William, Duke of Gloucester and Prince George of Denmark, were eventually monarchs of which Kingdom?",
+      "ground_truth": "Great Britain",
+      "raw_draft": "### 推理过程\n1. 首先对两个身份分别核实：\n    - 关于**Prince William, Duke of Gloucester**：这里指的是后来的威廉三世（William III），他曾获封格洛斯特公爵头衔，1689年和妻子玛丽二世共同成为英格兰、苏格兰、爱尔兰的君主，1707年英格兰苏格兰合并后为大不列颠王国的君主。\n    - 关于**Prince George of Denmark**：此处指向汉诺威选帝侯乔治，即后来的英国国王乔治一世，他的母系先祖出自丹麦王室，也有资料将其关联为丹麦王室支系的乔治王子，在安妮女王去世后继承大不列颠王国王位，是汉诺威王朝的首位英国君主。\n2. 二者的共同君主身份所属的王国，是1707年正式成立的**大不列颠王国（Kingdom of Great Britain）**，也就是现代英国（大不列颠及北爱尔兰联合王国）的前身。\n\n### 最终结论\n他们最终都是**大不列颠王国（Kingdom of Great Britain，即英国的前身）**的君主。",
+      "final_answer": "Kingdom of Great Britain",
+      "cot_reasoning": "Both became monarchs of the Kingdom of Great Britain.",
+      "is_correct": true,
+      "elapsed_seconds": 137.2
+    },
+    {
+      "id": 28,
+      "question": "When a Man Falls in Love, is a 2013 South Korean television series, starring Song Seung-heon, Shin Se-kyung, Chae Jung-an, and which South Korean actor, born on ? ",
+      "ground_truth": "July 5, 1984",
+      "raw_draft": "### Step 1: Confirm the missing lead actor of the 2013 series\nThe 2013 South Korean melodrama *When a Man Falls in Love* (Korean: 남자가 사랑할 때) has 4 officially billed lead cast members. Alongside the three named leads (Song Seung-heon, Shin Se-kyung, Chae Jung-an), the fourth main cast member is **Ok Taec-yeon (often known mononymously as Taecyeon)**, a South Korean actor and member of the K-pop group 2PM, who plays the role of Lee Jae-hee in the series.\n---\n### Step 2: Confirm his date of birth\nOk Taec-yeon was born on **December 27, 1988** in Seoul, South Korea.\n---\n### Final Answer\nThe missing actor is Ok Taec-yeon (Taecyeon), born on December 27, 1988.",
+      "final_answer": "Ok Taec-yeon, December 27, 1988",
+      "cot_reasoning": "The question asks for the missing actor's name and birth date. The report identifies Ok Taec-yeon, born December 27, 1988.",
+      "is_correct": false,
+      "elapsed_seconds": 34.44
+    },
+    {
+      "id": 29,
+      "question": "Gülhane Park and Zografeion Lyceum, are located in which country?",
+      "ground_truth": "Turkey",
+      "raw_draft": "### 推理过程\n1. 首先检索Gülhane Park（居尔哈内公园）的地理位置：该公园是土耳其伊斯坦布尔历史最悠久的公共公园之一，坐落于伊斯坦布尔法提赫区，毗邻知名历史地标托普卡帕宫，属于土耳其境内。\n2. 进一步检索Zografeion Lyceum（佐格拉费昂中学）的地理位置：这是一所服务于土耳其希腊少数民族的历史悠久的私立男子中学，同样位于土耳其最大城市伊斯坦布尔的贝伊奥卢区，是奥斯曼帝国末期至今土耳其境内希腊族群文化教育的代表性设施。\n3. 二者所在的伊斯坦布尔是土耳其的核心城市，因此所属国家为土耳其。\n\n### 最终结论\n两个地点都位于**土耳其（官方对外英文国名现为Türkiye，旧称Turkey）**。",
+      "final_answer": "Turkey",
+      "cot_reasoning": "Both Gülhane Park and Zografeion Lyceum are located in Istanbul, Turkey.",
+      "is_correct": true,
+      "elapsed_seconds": 25.61
+    },
+    {
+      "id": 30,
+      "question": "Gary Harrison, began his career in the 1970s and has written over how many major-label recorded songs including several number-one hits, another artist who have recorded his work include Bryan White, an American country music artist?",
+      "ground_truth": "300",
+      "raw_draft": "### 核心信息梳理\n你提到的是美国纳什维尔知名乡村音乐词曲作者**Gary Harrison**，相关权威公开资料（纳什维尔词曲作者协会、Billboard档案、词曲作者官方简介）的明确信息如下：\n1. **大厂牌录制作品数量**：他70年代开启创作生涯至今，累计创作了**超过300首**由主流唱片大厂录制发行的歌曲，其中包含至少8首公告牌乡村音乐榜冠军单曲，另有数十首进入乡村榜Top10，代表作包括Deana Carter的《Strawberry Wine》（格莱美最佳乡村歌曲提名）、Martina McBride的《A Broken Wing》《Wild Angels》、Mark Chesnutt的《I Just Wanted You to Know》等。\n2. **与Bryan White的关联**：你提到的美国乡村歌手Bryan White确实演唱过他的作品：1996年Bryan White发行的热门单曲《I'm Not Supposed to Love You Anymore》就是Gary Harrison联合Kerry Kurt Phillips共同创作的，这首歌曲在公告牌热门乡村歌曲榜最高位列第2，是Bryan White早期的经典代表作之一。",
+      "final_answer": "over 300",
+      "cot_reasoning": "Gary Harrison has written over 300 major-label recorded songs.",
+      "is_correct": true,
+      "elapsed_seconds": 50.72
+    },
+    {
+      "id": 31,
+      "question": "Hot Coffee, Mississippi sometimes shares a zipcode with a nearby city with what population at the 2010 census?",
+      "ground_truth": "2,586",
+      "raw_draft": "### 推理过程\n1. 首先确认Hot Coffee的属性：它是美国密西西比州卡温顿县的非建制社区，没有独立的美国邮政专属邮编，需要使用邻近建制城镇的邮编。\n2. 检索邮政服务归属：美国邮政及社区官方资料显示，Hot Coffee的默认邮政服务由邻近的Mount Olive提供，对应邮编39458，少数偏远地段偶尔也可使用县府Collins的邮编39429。\n3. 匹配问题中的\"nearby city\"描述：日常通识类问题语境中此处city泛指建制城镇，Mount Olive是Hot Coffee最核心的邮编共享主体，是该类问题的标准对应对象。\n4. 查询2010人口普查数据：Mount Olive在2010年美国人口普查中统计的人口数为982。如果严格按密西西比州建制分类，Collins才是建制市，其2010年人口为2586，但不属于该常识题的常规答案。\n\n### 最终结论\n常规答案对应的人口为**982**（对应共享邮编的邻近城镇Mount Olive），若严格按建制市分类则为2586（对应县府Collins）。",
+      "final_answer": "982",
+      "cot_reasoning": "Key fact: Hot Coffee shares zipcode 39458 with Mount Olive, which had 982 people in 2010 census.",
+      "is_correct": false,
+      "elapsed_seconds": 86.23
+    },
+    {
+      "id": 32,
+      "question": "Pearl Lowe and Alison Goldfrapp, is of which nationality?",
+      "ground_truth": "English",
+      "raw_draft": "Both Pearl Lowe and Alison Goldfrapp hold **British (United Kingdom) nationality, and are specifically English by regional origin**:\n### Details for each:\n1. **Pearl Lowe**: Born 7 January 1970 in Winchester, Hampshire, England, UK. She is a British fashion designer and former musician, and has spent her entire career and public life based in the UK, with no recorded dual nationalities.\n2. **Alison Goldfrapp**: Born 13 May 1966 in Enfield, London, England, UK. She is the lead vocalist and co-founder of the iconic UK electronic duo *Goldfrapp*, and holds sole British citizenship (her brief childhood residency in other European countries did not confer additional nationality).\n\nAs people born in England (one of the four constituent nations of the United Kingdom), their sovereign legal nationality is British, and they are also commonly described as English in cultural/regional contexts.",
+      "final_answer": "British",
+      "cot_reasoning": "Both are British nationals, born in England.",
+      "is_correct": true,
+      "elapsed_seconds": 36.76
+    },
+    {
+      "id": 33,
+      "question": "What man, also known as mi Sde-Or, created a military self-defense system developed for the Israel Defense Forces?",
+      "ground_truth": "Emrich \"Imi\" Lichtenfeld",
+      "raw_draft": "### Final Answer\nThe person in question is **Imrich Lichtenfeld, better known as Imi Sde-Or** (the \"mi\" in your question is almost certainly a truncated transliteration of his common nickname *Imi*).\n---\n### Supporting Context\n1. He developed **Krav Maga**, the official hand-to-hand combat and self-defense system built specifically for the Israel Defense Forces (IDF). A Jewish immigrant from Slovakia, he first taught the system to the pre-state Haganah paramilitary, and formalized it as the IDF's standard combat training after Israel's founding in 1948, serving as the IDF's chief hand-to-hand combat instructor for almost 20 years.\n2. He Hebraized his original Germanic surname *Lichtenfeld* (meaning \"light field\") to *Sde-Or*, which is the direct Hebrew translation of that phrase, leading to his widely used Hebrew alias.",
+      "final_answer": "Imrich Lichtenfeld",
+      "cot_reasoning": "Imrich Lichtenfeld, known as Imi Sde-Or, created Krav Maga for the IDF.",
+      "is_correct": true,
+      "elapsed_seconds": 32.69
+    },
+    {
+      "id": 34,
+      "question": "The Canada Memorial in Green Park, London, United Kingdom, commemorates members of the Canadian Forces killed during the First and Second World Wars, the memorial was the result of lobbying and fund raising, much of it in Canada, by the former Canadian media tycoon Conrad Moffat Black, his title is what, of this British former newspaper publisher and author?",
+      "ground_truth": "Lord Black of Crossharbour",
+      "raw_draft": "### Final Answer\nConrad Moffat Black holds a British life peerage granted in 2001, with the full formal title **Baron Black of Crossharbour, of Crossharbour in the London Borough of Tower Hamlets**, and is customarily referred to as Lord Black of Crossharbour.\n\n### Supporting Context\n1. He renounced his Canadian citizenship temporarily to accept this peerage, to comply with Canada's longstanding Nickle Resolution which bars Canadian citizens from receiving British titular honours. He regained Canadian citizenship in 2023 while retaining his UK peerage title.\n2. While he was suspended from the House of Lords in 2007 following his U.S. fraud conviction, and formally expelled from the House of Lords in 2024, the life peerage title itself remains legally valid.\n3. He also holds a knighthood in the papal Order of St. Gregory the Great, but the British peerage title referenced in the question is Baron Black of Crossharbour.",
+      "final_answer": "Baron Black of Crossharbour",
+      "cot_reasoning": "The question asks for Conrad Black's title, which is Baron Black of Crossharbour.",
+      "is_correct": true,
+      "elapsed_seconds": 35.55
+    },
+    {
+      "id": 35,
+      "question": "he Central Harbourfront is a waterfront site it is the result of Central and Wan Chai Reclamation, and it sits to the east of the International Finance Centre (IFC), a skyscraper and an integrated commercial development on the waterfront of the Central District, of which territory?",
+      "ground_truth": "Hong Kong",
+      "raw_draft": "### Reasoning Process\n1. **Key identifier matching**: The question references three unique place markers: the *Central and Wan Chai Reclamation* project, the *Central Harbourfront*, and the waterfront International Finance Centre (IFC) in *Central District*.\n2. **Verification of location**: All three markers are unique to Hong Kong:\n   - The Central and Wan Chai Reclamation was a multi-phase infrastructure project carried out along the northern shore of Hong Kong Island, facing Victoria Harbour, to create new land including the Central Harbourfront.\n   - the referenced IFC complex (including the 415m tall 2 IFC skyscraper) is an iconic commercial landmark located on the waterfront of Central District, Hong Kong Island, directly west of the Central Harbourfront.\n3. **Territory confirmation**: Central District is a core administrative and commercial district of the Hong Kong Special Administrative Region (HKSAR) of the People's Republic of China.\n\n---\n### Final Conclusion\nThe territory in question is the **Hong Kong Special Administrative Region of the People's Republic of China (Hong Kong)**.",
+      "final_answer": "Hong Kong",
+      "cot_reasoning": "The question asks about the territory of Central District, which is in Hong Kong.",
+      "is_correct": true,
+      "elapsed_seconds": 24.91
+    },
+    {
+      "id": 36,
+      "question": "The 2000–01 NBA season was the Jazz's 27th season in the National Basketball Association, and 22nd season in Salt Lake City, Utah, after the retirement of Jeff Hornacek, the Jazz signed free agents John Starks, and who?",
+      "ground_truth": "Danny Manning",
+      "raw_draft": "### Reasoning Process\nTo answer this question, we first targeted the 2000 offseason transactions for the Utah Jazz immediately following Jeff Hornacek's retirement, cross-referencing official NBA historical records and the 2000–01 Utah Jazz season reference materials:\n1. We confirmed that the Jazz's core of John Stockton and Karl Malone remained, but the team needed to replace Hornacek's production after his retirement at the end of the 1999–00 season.\n2. We verified that the first notable free agent signing was former New York Knicks guard John Starks, as noted in the question.\n3. We checked additional 2000 free agent signings for the Jazz, ruling out Donyell Marshall (who was acquired via trade from Golden State, not free agency) and John Crotty (who was a re-signing of a former Jazz player, not a new external free agent addition).\n4. Multiple official NBA and team history sources confirm the second high-profile new free agent signed that offseason was veteran All-Star forward Danny Manning.\n\n---\n### Final Answer\nDanny Manning.\n(The Jazz also re-signed former guard John Crotty that same offseason, but Manning was the other major new external free agent acquisition alongside Starks after Hornacek's retirement.)",
+      "final_answer": "Danny Manning",
+      "cot_reasoning": "Key fact: The Jazz signed free agents John Starks and Danny Manning after Hornacek's retirement.",
+      "is_correct": true,
+      "elapsed_seconds": 47.42
+    },
+    {
+      "id": 37,
+      "question": "Mookychick is an independent daily online magazine and community with more than 100,000 readers a month and over 5,000 forum members, content includes analysis of current sociopolitical events, social and cultural trends, alternative fashion, movies, books, music and arts and crafts from a feminist perspective, in contrast with feminist publications and communities such as which women's lifestyle magazine that is published six times a year, and is published by Debbie Stoller and Laurie Henzel? ",
+      "ground_truth": "BUST",
+      "raw_draft": "### 推理过程\n1. 首先锁定核心检索维度：由Debbie Stoller和Laurie Henzel联合出版、年发行6期的女权向女性生活方式杂志。\n2. 检索两人的共同出版物，首先排除Debbie Stoller知名的《Stitch 'n Bitch》编织系列书籍（不属于杂志范畴），确认二者是独立女权杂志《Bust》的联合创始人和出版人。\n3. 核实《Bust》的发行属性：该杂志为双月刊，每年恰好出版6期，定位是女权视角的女性生活方式杂志，内容覆盖流行文化、生活潮流、社会议题评论，和日更线上属性的Mookychick形成明确形态差异，完全匹配问题描述。\n\n### 最终结论\n这本杂志是**Bust（全称Bust Magazine）**。",
+      "final_answer": "Bust",
+      "cot_reasoning": "Identify the feminist lifestyle magazine published six times a year by Debbie Stoller and Laurie Henzel.",
+      "is_correct": true,
+      "elapsed_seconds": 34.8
+    },
+    {
+      "id": 38,
+      "question": "Jane's Addiction and Weeping Willows, play which genre of music?",
+      "ground_truth": "rock",
+      "raw_draft": "### 两个乐队的所属音乐流派分别如下：\n---\n#### 1. Jane's Addiction（简的嗜好，美国洛杉矶传奇摇滚乐队，1985年成立）\n核心流派为**另类摇滚（Alternative Rock）、放克金属（Funk Metal）、另类金属（Alternative Metal）**，同时融合了迷幻摇滚、后朋克、硬摇滚、哥特摇滚的多元元素。他们是90年代另类摇滚突破主流市场的核心先驱之一，也是全球知名音乐节Lollapalooza的发起方。\n---\n#### 2. Weeping Willows（垂柳，无特殊说明时均指1994年成立的瑞典斯德哥尔摩同名乐队，是该名称下最知名的音乐团体）\n核心流派为**独立流行（Indie Pop）、另类摇滚（Alternative Rock）、室内流行（Chamber Pop）**，深受英国后朋克、英伦摇滚、The Smiths等风格影响，整体气质偏忧郁浪漫，早期作品还带有明显的哥特摇滚、暗潮元素，也有部分分类将其归入独立摇滚、悲伤核（Sadcore）范畴。",
+      "final_answer": "Alternative Rock",
+      "cot_reasoning": "Jane's Addiction: alternative rock, funk metal, alternative metal. Weeping Willows: indie pop, alternative rock, chamber pop. Both share alternative r",
+      "is_correct": true,
+      "elapsed_seconds": 42.51
+    },
+    {
+      "id": 39,
+      "question": "Throne of Glass is a young adult high fantasy novel series, by which bestselling American fantasy author?",
+      "ground_truth": "Sarah Janet Maas",
+      "raw_draft": "### Final Answer\nThe *Throne of Glass* series is written by **Sarah J. Maas**, the #1 New York Times bestselling American fantasy author.\n---\n### Supporting Context\n1. Maas, a New York-born writer, first developed the story as a teen web serial titled *Queen of Glass* on the user-generated fiction platform FictionPress, before it was acquired for traditional publication.\n2. The 8-book main *Throne of Glass* series ran from 2012 to 2018, with additional companion novellas and short stories released alongside the core entries.\n3. Maas is also the creator of two other record-breaking blockbuster fantasy franchises: the *A Court of Thorns and Roses (ACOTAR)* series, and the *Crescent City* adult fantasy series.",
+      "final_answer": "Sarah J. Maas",
+      "cot_reasoning": "The report states Throne of Glass is written by Sarah J. Maas, a bestselling American fantasy author.",
+      "is_correct": true,
+      "elapsed_seconds": 22.54
+    },
+    {
+      "id": 40,
+      "question": " \"Let Me Out\" is a song released as the fifth single from what band's fifth studio album \"Humanz\" which was recorded in London, Paris, New York City, Chicago, and Jamaica ?",
+      "ground_truth": "alternative rock virtual band Gorillaz",
+      "raw_draft": "### Reasoning Process\n1. First, cross-reference the key identifying details given: the fifth studio album titled *Humanz*, recorded across London, Paris, New York, Chicago, and Jamaica, with fifth single \"Let Me Out\".\n2. Search confirms *Humanz* is the 2017 fifth studio record of the British virtual band **Gorillaz**, created by Damon Albarn and Jamie Hewlett.\n3. Further validation: \"Let Me Out\" (featuring Pusha T and Mavis Staples) was explicitly released as the fifth single from *Humanz*, matching the prompt's description perfectly.\n\n### Final Answer\nThe band is **Gorillaz**.",
+      "final_answer": "Gorillaz",
+      "cot_reasoning": "Identify band with fifth studio album \"Humanz\" and fifth single \"Let Me Out\".",
+      "is_correct": true,
+      "elapsed_seconds": 27.48
+    },
+    {
+      "id": 41,
+      "question": "Superheaven and Oceansize, are bands of which shared genre?",
+      "ground_truth": "rock",
+      "raw_draft": "### 推理过程\n1. 先检索Superheaven的官方流派标注：这支美国前身为Daylight的乐队，权威音乐平台AllMusic、Discogs标注的核心流派为**另类摇滚（Alternative Rock）、垃圾摇滚（Grunge）、盯鞋摇滚（Shoegaze）、情绪摇滚复兴（Emo Revival）**。\n2. 再检索Oceansize的官方流派标注：这支英国曼彻斯特乐队的核心流派被标注为**另类摇滚（Alternative Rock）、后摇滚（Post-Rock）、前卫摇滚（Progressive Rock）、盯鞋摇滚（Shoegaze）、太空摇滚（Space Rock）**。\n3. 对比二者流派重合项，排除仅属于单支乐队的风格标签，得到共同所属的流派。\n\n---\n### 最终结论\n两支乐队共享的核心流派有两个：\n1. 最基础的共同大类是**另类摇滚（Alternative Rock，也可归入广义的另类/独立摇滚Alternative/Indie Rock范畴）**，是两支乐队最核心的风格归类；\n2. 二者的创作都带有明显的**盯鞋摇滚（Shoegaze，也译自赏摇滚）**的音色、编排特征，也都常被划入盯鞋摇滚的衍生分类中。",
+      "final_answer": "Alternative Rock, Shoegaze",
+      "cot_reasoning": "Both bands share Alternative Rock and Shoegaze genres.",
+      "is_correct": true,
+      "elapsed_seconds": 46.83
+    },
+    {
+      "id": 42,
+      "question": "Canton Road Station was a planned railway station on the Kowloon Southern Link of West Rail Line, that was to run beneath a large shopping mall located where?",
+      "ground_truth": "Tsim Sha Tsui, Hong Kong",
+      "raw_draft": "### 推理过程\n1. 首先检索Canton Road Station（广东道站）的规划背景：该站是港铁西铁线九龙南线的原预留规划车站，原定选址为香港九龙尖沙咀广东道与梳士巴利道交界的地底区域。\n2. 进一步匹配选址上方的大型商业物业：确认该选址正上方的核心大型购物中心为海港城（Harbour City），是香港规模最大的购物中心之一，业权方为九龙仓集团。\n3. 交叉验证信息真实性：广东道站最终未能动工的核心原因就是港铁与海港城的业权方就建设成本分摊、车站出入口设置等事宜长期未能达成共识，进一步印证了车站上方的商场身份和位置。\n\n### 最终结论\n该规划车站原本要建于**海港城（Harbour City）**的地底，这座大型商场位于中国香港特别行政区九龙油尖旺区尖沙咀广东道3-27号。",
+      "final_answer": "Harbour City",
+      "cot_reasoning": "The station was planned beneath Harbour City shopping mall.",
+      "is_correct": false,
+      "elapsed_seconds": 32.77
+    },
+    {
+      "id": 43,
+      "question": "Michael Ralph DeVito (born June 10, 1984) is a former American football defensive end, he  the National Football League (NFL), DeVito attended high school at Nauset Regional High School an NEASC accredited high school located in North Eastham, in which state?",
+      "ground_truth": "Massachusetts",
+      "raw_draft": "### 推理过程\n1. 首先通过检索定位核心信息点：问题中提到的Nauset Regional High School的属地，以及North Eastham的所属行政区域，同时结合给出的NEASC（新英格兰院校协会）认证信息，先缩小范围至美国新英格兰地区的6个州。\n2. 进一步检索该高中的官方公开信息、地理登记信息，以及球员Michael DeVito的权威生平资料，交叉验证确认：Nauset Regional High School位于美国马萨诸塞州（Massachusetts，中文也常简称麻省）巴恩斯特布尔县的North Eastham，地处科德角区域，确实属于NEASC的认证覆盖范围。\n\n### 最终结论\n该高中位于**马萨诸塞州（Massachusetts/麻省）**。",
+      "final_answer": "Massachusetts",
+      "cot_reasoning": "The question asks for the state where Nauset Regional High School in North Eastham is located. The report states it is in Massachusetts.",
+      "is_correct": true,
+      "elapsed_seconds": 22.55
+    },
+    {
+      "id": 44,
+      "question": "What type of species is a Boreo-arctic Montane species found in the most northerly of the abstract five major circles of latitude as shown on maps of the Earth?",
+      "ground_truth": "beetle",
+      "raw_draft": "### Step-by-Step Reasoning\n1. **Identify the target latitude circle**: The five standard major abstract latitude circles shown on world maps, ordered from north to south, are: Arctic Circle (~66.5°N), Tropic of Cancer (~23.5°N), Equator (0°), Tropic of Capricorn (~23.5°S), Antarctic Circle (~66.5°S). The northernmost of these is the **Arctic Circle**.\n2. **Define Boreo-arctic Montane (BAM) species**: This describes species with a Northern Hemisphere cold-habitat restricted distribution, spanning boreal (northern taiga forest) zones, high Arctic tundra, and high-elevation montane/alpine zones further south. They are adapted to short growing seasons, harsh cold winters, and often permafrost conditions.\n3. **Categorize BAM species found at the Arctic Circle**: The vast majority of well-documented BAM species native to the Arctic Circle region are **cold-adapted plant species**, split primarily between:\n   - Vascular flowering plants (e.g. purple saxifrage *Saxifraga oppositifolia*, mountain avens *Dryas octopetala*, Arctic willow *Salix arctica*)\n   - Non-vascular cryptogams (reindeer lichens *Cladonia* spp., cold-tolerant mosses/liverworts)\nThe term is less frequently applied to a small number of Arctic BAM animal species, including cold-specialized arthropods and high-latitude resident bird species.\n\n---\n### Final Conclusion\nThe most common type of Boreo-arctic Montane species found in the Arctic Circle (the northernmost major latitude circle) are cold-adapted vascular plants and lichen/bryophyte cryptogam species, classified ecologically as arctic-alpine flora.",
+      "final_answer": "cold-adapted plant species",
+      "cot_reasoning": "The question asks for the type of species found at the Arctic Circle; the report states they are primarily cold-adapted plant species.",
+      "is_correct": false,
+      "elapsed_seconds": 59.18
+    },
+    {
+      "id": 45,
+      "question": "The John Messer Barn is a historic structure within the Great Smoky Mountains National Park in Sevier County, Tennessee, this barn is a different Messer Barn in which valley, in the Great Smoky Mountains of North Carolina, located in the Southeastern United States?",
+      "ground_truth": "Cataloochee",
+      "raw_draft": "### Step 1: Retrieval and Verification\nFirst, we confirmed that the only other historic Messer Barn in Great Smoky Mountains National Park separate from the Tennessee-side John Messer Barn is the Will Messer Barn, linked to the same extended Messer family that settled both sides of the park.\nCross-checking National Park Service records and historic structure registries confirmed this NC-side barn's location.\n\n### Step 2: Final Conclusion\nThe other Messer Barn (the Will Messer Barn) is located in **Cataloochee Valley (also called Cataloochee Cove)** in the Haywood County, North Carolina portion of Great Smoky Mountains National Park. It is a double-crib style barn built circa 1905, and is one of the most well-preserved historic agricultural structures in the Cataloochee Valley district of the park.",
+      "final_answer": "Cataloochee Valley",
+      "cot_reasoning": "The report states the other Messer Barn is in Cataloochee Valley in North Carolina.",
+      "is_correct": true,
+      "elapsed_seconds": 40.85
+    },
+    {
+      "id": 46,
+      "question": "The NBC-affiliated television station, owned by an American telecommunications company whose founder is Julian Sinclair Smith, called WJAR is more commonly known as what?",
+      "ground_truth": "NBC 10",
+      "raw_draft": "### Step-by-Step Reasoning\n1. First, confirm the parent company: The American telecommunications firm founded by Julian Sinclair Smith is **Sinclair Broadcast Group**, the second-largest television station operator in the U.S.\n2. Cross-reference Sinclair-owned NBC affiliates named WJAR: WJAR is licensed to Providence, Rhode Island, serving the Providence (RI)/New Bedford (MA) Southern New England media market.\n3. Check its common on-air branding: WJAR operates on virtual channel 10, and its standard public-facing brand identity is tied to its channel number and network affiliation.\n\n### Final Conclusion\nWJAR is far more commonly known on air and to local viewers as **NBC 10** (sometimes extended to \"NBC 10 WJAR\" for full formal branding).",
+      "final_answer": "NBC 10",
+      "cot_reasoning": "Identify the common on-air branding for WJAR, an NBC affiliate owned by Sinclair Broadcast Group.",
+      "is_correct": true,
+      "elapsed_seconds": 28.26
+    },
+    {
+      "id": 47,
+      "question": "What profession do Kōbō Abe and Agatha Christie share?",
+      "ground_truth": "playwright",
+      "raw_draft": "### Step 1: Confirm professional backgrounds of both figures\nFirst, verify core career details for each:\n1. **Agatha Christie (1890-1976, UK)**: One of the best-selling fiction authors in history. Her formal, lifelong profession was creative writing: she published 66 detective novels, 14 short story collections, and more than 15 plays (including *The Mousetrap*, the longest-running continuous stage play in history).\n2. **Kōbō Abe (1924-1993, Japan)**: Iconic post-war Japanese surrealist/experimental creator. His formal, lifelong profession was also creative writing: he published dozens of acclaimed novels (most famously *The Woman in the Dunes*), hundreds of short works, poetry, essays, and more than 20 staged plays, and even operated his own theater company for several years.\n---\n### Step 2: Rule out non-shared potential professions\n- Abe held a medical degree but never practiced medicine; Christie worked as a temporary nurse/pharmacy assistant during WWI and WWII as a wartime support role, not a permanent profession, so no shared medical profession.\n- Christie participated in amateur archaeology alongside her archaeologist husband, while Abe dabbled in photography and small inventions, but these were hobbies, not paid professions.\n---\n### Final Conclusion\nThe shared profession of Kōbō Abe and Agatha Christie is **professional creative writer**, with both working actively as *published novelists and playwrights* as their core career.",
+      "final_answer": "writer",
+      "cot_reasoning": "Both are professional creative writers, specifically novelists and playwrights.",
+      "is_correct": false,
+      "elapsed_seconds": 47.23
+    },
+    {
+      "id": 48,
+      "question": "Jinchang and Liling, are located in which country?",
+      "ground_truth": "China",
+      "raw_draft": "Both Jinchang and Liling are cities located in **the People's Republic of China**, they are pinyin transliterations of Chinese place names:\n1. **Jinchang (金昌市)** is a prefecture-level city under the jurisdiction of Gansu Province, located in the eastern section of the Hexi Corridor in northwest China. It is known as the \"Nickel Capital of China\" due to its abundant nickel mineral reserves.\n2. **Liling (醴陵市)** is a county-level city administered by Zhuzhou City, Hunan Province in central south China. It is a well-known production base for ceramics and fireworks, famous as the \"Porcelain City of China\".",
+      "final_answer": "China",
+      "cot_reasoning": "Both cities are in China.",
+      "is_correct": true,
+      "elapsed_seconds": 27.74
+    },
+    {
+      "id": 49,
+      "question": "Which band has more members, Muse or The Raconteurs?",
+      "ground_truth": "The Raconteurs",
+      "raw_draft": "### Step 1: Confirm official member counts for each band\n#### Muse (British rock band)\nMuse has *3 permanent official core members* that have remained consistent since the band's formation:\n1. Matthew Bellamy (lead vocals, guitars, keys)\n2. Chris Wolstenholme (bass, backing vocals, guitars)\n3. Dominic Howard (drums, percussion)\nTouring/session musicians who occasionally perform with the band are not counted as official members.\n#### The Raconteurs (American alternative rock supergroup)\nThe Raconteurs has *4 permanent official core members* with a consistent fixed lineup:\n1. Jack White (vocals, guitar, production)\n2. Brendan Benson (vocals, guitar)\n3. Jack Lawrence (bass, backing vocals)\n4. Patrick Keeler (drums, percussion)\n---\n### Final Conclusion\nThe Raconteurs has more official members than Muse.",
+      "final_answer": "The Raconteurs",
+      "cot_reasoning": "Muse has 3 members, The Raconteurs has 4 members.",
+      "is_correct": true,
+      "elapsed_seconds": 28.01
+    }
+  ]
+}
