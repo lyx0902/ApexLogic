@@ -145,6 +145,14 @@ python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能�
 python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode user_only --output reports/oppo-vs-iphone-user.md
 ```
 
+### 5.6 统计评测耗时（按题目 id 聚合）
+
+```bash
+python -u evals/elapsed_stats.py --input tests/results_hotpotqa_20260411_172430.json
+```
+
+命令行会输出：`total_rows`、`valid_rows`、`unique_ids`、`overall_avg`。
+
 ## 6. 输出文件说明
 
 ### 6.1 `*-user.md`
