@@ -18,7 +18,7 @@ import streamlit as st
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ApexLogic 深度研究引擎",
+    page_title="ApexLogic",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -382,7 +382,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        "**ApexLogic 多智能体研究系统**  \n"
+        "**ApexLogic 多智能体深度研究系统**  \n"
         "Thompson Sampling MAB · Graph Expand  \n"
         "AQD · IRCoT · BGE 两阶段精筛  \n\n"
         "运行命令：`streamlit run app.py`"
@@ -390,7 +390,7 @@ with st.sidebar:
 
 
 # ── Main Header ────────────────────────────────────────────────────────────────
-st.markdown("# 🔬 ApexLogic 深度研究引擎")
+st.markdown("# 🔬 ApexLogic 多智能体深度研究引擎")
 st.caption(
     "LangGraph 多智能体循环：Researcher → Writer → Reviewer "
     "· 四层检索优化 · BGE 两阶段精筛 "
@@ -585,14 +585,6 @@ try:
                                 hop_num = hop_s.get("hop", i + 1)
                                 hop_status = hop_s.get("status", "")
                                 st.markdown(f"**第 {hop_num} 跳**")
-
-                                reasoning_text = (
-                                    hop_s.get("reasoning_full", "")
-                                    or hop_s.get("reasoning_preview", "")
-                                )
-                                if reasoning_text:
-                                    with st.expander("推理链", expanded=False):
-                                        st.text(reasoning_text[:2000])
 
                                 gap_queries_list = hop_s.get("gap_queries", [])
                                 if gap_queries_list:
