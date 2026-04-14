@@ -396,6 +396,10 @@ class AdaptiveQueryPlanner:
                 "depends_on": depends_on,
                 "new_docs": len(new_docs),
                 "skipped": is_dup,
+                "retrieved_docs": [
+                    {"title": d.get("title", ""), "url": d.get("url", "")}
+                    for d in new_docs
+                ],
             })
 
         plan_summary: Dict[str, Any] = {

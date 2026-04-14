@@ -343,8 +343,10 @@ class IterativeRetrievalOptimizer:
                     "hop": hop + 1,
                     "status": "no_new_gaps",
                     "reasoning_preview": (reasoning or "")[:150],
+                    "reasoning_full": (reasoning or ""),
                     "gap_queries": [],
                     "new_contexts": 0,
+                    "retrieved_docs": [],
                 })
                 break
 
@@ -360,8 +362,13 @@ class IterativeRetrievalOptimizer:
                 "hop": hop + 1,
                 "status": "searched",
                 "reasoning_preview": (reasoning or "")[:150],
+                "reasoning_full": (reasoning or ""),
                 "gap_queries": filtered_queries,
                 "new_contexts": len(hop_new_contexts),
+                "retrieved_docs": [
+                    {"title": r.get("title", ""), "url": r.get("url", "")}
+                    for r in hop_new_contexts
+                ],
             })
 
             # 3. 更新 working_contexts（为下一跳提供更完整的上下文）

@@ -1,6 +1,5 @@
 """
 ApexLogic 深度研究引擎 — Streamlit 可视化界面
-零侵入 UI 层，仅调用 core.graph 与 core.state，不修改任何现有业务逻辑。
 """
 
 from __future__ import annotations
@@ -69,7 +68,6 @@ code {
 # ── 常量 ───────────────────────────────────────────────────────────────────────
 APPSTATS_DIR = Path("appstats")
 
-
 # ── 通用辅助函数 ───────────────────────────────────────────────────────────────
 
 def extract_think(text: str) -> tuple[list[str], str]:
@@ -103,6 +101,60 @@ def _format_elapsed(seconds: float) -> str:
     return f"{m}分{s}秒" if m > 0 else f"{s}秒"
 
 
+def render_live_timer(
+    placeholder: "st.delta_generator.DeltaGenerator",
+    start_time: datetime,
+    stop_seconds: float | None = None,
+) -> None:
+    """渲染前端秒级计时器；stop_seconds 不为 None 时停止并显示最终时长。"""
+    timer_id = f"apex_timer_{int(start_time.timestamp() * 1000)}"
+    start_ms = int(start_time.timestamp() * 1000)
+    if stop_seconds is None:
+        html = f"""
+<div style="font-size:0.88rem;color:rgba(49,51,63,0.6);margin-bottom:4px;">运行总时长</div>
+<div id="{timer_id}" style="font-size:1.55rem;font-weight:700;">0秒</div>
+<script>
+(function() {{
+  const key = "{timer_id}";
+  const startMs = {start_ms};
+  const format = (sec) => {{
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m > 0 ? `${{m}}分${{s}}秒` : `${{s}}秒`;
+  }};
+  if (!window.__apexTimerHandles) window.__apexTimerHandles = {{}};
+  if (window.__apexTimerHandles[key]) clearInterval(window.__apexTimerHandles[key]);
+  const tick = () => {{
+    const el = document.getElementById(key);
+    if (!el) return;
+    const sec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    el.innerText = format(sec);
+  }};
+  tick();
+  window.__apexTimerHandles[key] = setInterval(tick, 1000);
+}})();
+</script>
+"""
+    else:
+        total_s = int(stop_seconds)
+        m, s = divmod(total_s, 60)
+        display = f"{m}分{s}秒" if m > 0 else f"{s}秒"
+        html = f"""
+<div style="font-size:0.88rem;color:rgba(49,51,63,0.6);margin-bottom:4px;">运行总时长</div>
+<div id="{timer_id}" style="font-size:1.55rem;font-weight:700;">{display}</div>
+<script>
+(function() {{
+  const key = "{timer_id}";
+  if (window.__apexTimerHandles && window.__apexTimerHandles[key]) {{
+    clearInterval(window.__apexTimerHandles[key]);
+    delete window.__apexTimerHandles[key];
+  }}
+}})();
+</script>
+"""
+    placeholder.markdown(html, unsafe_allow_html=True)
+
+
 def render_references(contexts: list) -> None:
     """渲染 Reranker Top-10 参考资料列表。"""
     if not contexts:
@@ -111,7 +163,10 @@ def render_references(contexts: list) -> None:
     for i, ctx in enumerate(contexts, 1):
         if isinstance(ctx, dict):
             title = ctx.get("title", "未知标题")
-            url = ctx.get("source", "")
+            raw_url = str(ctx.get("url", "") or "").strip()
+            # 兼容历史结构：仅当 source 本身是链接时才回退使用。
+            source_fallback = str(ctx.get("source", "") or "").strip()
+            url = raw_url if raw_url else (source_fallback if source_fallback.startswith(("http://", "https://")) else "")
             score = ctx.get("bge_reranker_score")
             summary = ctx.get("core_summary", "")
             score_str = f" · 相关度 `{score:.4f}`" if score is not None else ""
@@ -130,6 +185,7 @@ def render_references(contexts: list) -> None:
 def save_run_to_history(
     topic: str,
     max_revisions: int,
+    pass_threshold: float,
     final_state: dict,
     elapsed_seconds: float,
 ) -> None:
@@ -146,6 +202,7 @@ def save_run_to_history(
         "timestamp": ts.isoformat(),
         "topic": topic,
         "max_revisions": max_revisions,
+        "pass_threshold": pass_threshold,
         "iterations_done": final_state.get("revision_step", 0),
         "is_satisfactory": bool(final_state.get("is_satisfactory", False)),
         "weighted_score": float(review_result.get("weighted_score", 0.0)),
@@ -154,7 +211,11 @@ def save_run_to_history(
         "references": [
             {
                 "title": ctx.get("title", "") if isinstance(ctx, dict) else str(ctx),
-                "url": ctx.get("source", "") if isinstance(ctx, dict) else "",
+                "url": (
+                    str(ctx.get("url", "") or "").strip()
+                    if isinstance(ctx, dict)
+                    else ""
+                ),
                 "score": ctx.get("bge_reranker_score") if isinstance(ctx, dict) else None,
                 "summary": (ctx.get("core_summary", "")[:200] if isinstance(ctx, dict) else ""),
             }
@@ -208,11 +269,16 @@ def show_history_view(data: dict) -> None:
     st.markdown("## 📋 历史记录查看")
     st.caption(f"研究时间：{ts_str}　｜　主题：{data['topic']}")
 
-    hc1, hc2, hc3, hc4 = st.columns(4)
+    hc1, hc2, hc3, hc4, hc5 = st.columns(5)
     hc1.metric("研究主题", data["topic"][:18] + ("…" if len(data["topic"]) > 18 else ""))
     hc2.metric("实际迭代轮数", data.get("iterations_done", "—"))
     hc3.metric("加权总分", f"{data.get('weighted_score', 0):.2f}")
     hc4.metric("运行总时长", _format_elapsed(data.get("elapsed_seconds", 0)))
+    pass_threshold = data.get("pass_threshold")
+    hc5.metric(
+        "通过阈值",
+        f"{float(pass_threshold):.1f}" if pass_threshold is not None else "—",
+    )
     st.markdown("---")
 
     # 研究报告
@@ -275,7 +341,7 @@ history_list = load_history_list()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("⚙️ ApexLogic 引擎配置")
+    st.title("⚙️ ApexLogic 参数配置")
     st.markdown("---")
 
     topic: str = st.text_input(
@@ -283,6 +349,7 @@ with st.sidebar:
         placeholder="例如：大型语言模型的推理能力",
     )
     max_revisions: int = st.slider("最大反思轮数", min_value=1, max_value=5, value=3)
+    pass_threshold: float = st.slider("报告通过阈值", min_value=1.0, max_value=10.0, value=7.5, step=0.5)
 
     st.markdown("---")
     start_btn: bool = st.button(
@@ -326,8 +393,9 @@ with st.sidebar:
 st.markdown("# 🔬 ApexLogic 深度研究引擎")
 st.caption(
     "LangGraph 多智能体循环：Researcher → Writer → Reviewer "
-    "· 四层检索优化 · BGE 精筛"
+    "· 四层检索优化 · BGE 两阶段精筛 "
 )
+st.caption("©️南京理工大学计算机科学与技术22级刘宇翔")
 st.markdown("---")
 
 
@@ -369,18 +437,21 @@ except ImportError as exc:
     st.stop()
 
 
-# ── 运行参数概览（4 列：主题 / 轮数 / 启动时间 / 运行总时长）─────────────────────
-run_start_time = datetime.now()
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("研究主题", topic[:20] + ("…" if len(topic) > 20 else ""))
+# ── 运行参数概览（5 列：主题 / 轮数 / 通过阈值 / 启动时间 / 运行总时长）──────────
+display_start_time = datetime.now()
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("研究主题", topic[:16] + ("…" if len(topic) > 16 else ""))
 c2.metric("最大反思轮数", max_revisions)
-c3.metric("启动时间", run_start_time.strftime("%H:%M:%S"))
-timer_placeholder = c4.empty()
-timer_placeholder.metric("运行总时长", "⏱ 计时中…")
+c3.metric("通过阈值", f"{pass_threshold:.1f}")
+c4.metric("启动时间", display_start_time.strftime("%H:%M:%S"))
+timer_placeholder = c5.empty()
+# run_start_time 和计时器将在 graph.stream() 开始前设定，精确计量执行时长
 st.markdown("---")
 
 
 # ── 编译图 & 构建初始状态 ───────────────────────────────────────────────────────
+# 将用户设置的通过阈值写入环境变量，reviewer_node 运行时会动态读取
+os.environ["REVIEWER_PASS_THRESHOLD"] = str(pass_threshold)
 try:
     graph = compile_graph(max_revisions)
     # output_mode="user" 保证最终报告干净；过程数据仍在 state 各字段中
@@ -400,6 +471,11 @@ status_placeholder.info("🚀 引擎启动，多智能体流水线正在初始�
 # ── 主流式循环 ─────────────────────────────────────────────────────────────────
 prev_state: dict = {}
 final_state: dict = dict(initial_state)
+researcher_first_seen = False
+
+# 计时器：在 graph.stream() 启动前精确计时，与页面加载耗时解耦
+run_start_time = datetime.now()
+render_live_timer(timer_placeholder, run_start_time)
 
 try:
     with st.spinner("🤖 正在思考与执行中，请耐心等待……"):
@@ -413,10 +489,16 @@ try:
             # ── Researcher ────────────────────────────────────────────────────
             if node == "researcher":
                 current_iteration = full_state.get("revision_step", 0) + 1
+                if not researcher_first_seen:
+                    researcher_first_seen = True
+                    status_placeholder.info(
+                        f"🔍 第 {current_iteration} 轮 · Researcher 正在检索……"
+                    )
+                    prev_state = dict(full_state)
+                    continue
+
                 if current_iteration > 1:
                     st.markdown("---")
-                    st.markdown(f"### 🔄 第 {current_iteration} 轮迭代")
-                st.markdown(f"### 🔄 第 {current_iteration} 轮迭代")
                 status_placeholder.info(
                     f"🔍 第 {current_iteration} 轮 · Researcher 检索完成，Writer 正在起草……"
                 )
@@ -440,17 +522,99 @@ try:
                     ctx_len = len(full_state.get("retrieved_context", []))
                     aqd: dict = full_state.get("query_plan", {})
                     ircot: dict = full_state.get("iterative_retrieval_summary", {})
+                    _sqs = full_state.get("source_quality_summary", {}) or {}
+                    dedup_total = (
+                        _sqs.get("bge_summary", {}).get("dedup_total", 0)
+                        if isinstance(_sqs, dict)
+                        else 0
+                    )
 
-                    mc1, mc2, mc3 = st.columns(3)
-                    mc1.metric("命中上下文数", ctx_len)
-                    mc2.metric(
+                    mc1, mc2, mc3, mc4 = st.columns(4)
+                    mc1.metric("去重后总检索数", dedup_total)
+                    mc2.metric("命中上下文数", ctx_len)
+                    mc3.metric(
                         "AQD 子问题数",
                         aqd.get("sub_questions_count", 0) if aqd.get("enabled") else "—",
                     )
-                    mc3.metric(
+                    mc4.metric(
                         "IRCoT 跳数",
                         ircot.get("hops_executed", 0) if ircot.get("enabled") else "—",
                     )
+
+                    # ── AQD 详情 ────────────────────────────────────────────
+                    if aqd.get("enabled"):
+                        sub_results_list = aqd.get("sub_results", [])
+                        total_new_docs = aqd.get("total_new_docs", 0)
+                        with st.expander(
+                            f"🧩 AQD 查询分解详情（{len(sub_results_list)} 个子问题，共补搜 {total_new_docs} 条）",
+                            expanded=False,
+                        ):
+                            for sub in sub_results_list:
+                                sq_id = sub.get("id", "?")
+                                question = sub.get("question", "")
+                                new_docs_count = sub.get("new_docs", 0)
+                                skipped = sub.get("skipped", False)
+                                retrieved_docs = sub.get("retrieved_docs", [])
+                                if skipped:
+                                    st.markdown(
+                                        f"**子问题 {sq_id}：** {question}  \n"
+                                        f"*（与已有查询高度重叠，已跳过）*"
+                                    )
+                                else:
+                                    st.markdown(
+                                        f"**子问题 {sq_id}：** {question} — 补搜 {new_docs_count} 条"
+                                    )
+                                    for doc in retrieved_docs:
+                                        doc_title = doc.get("title", "") or "未知标题"
+                                        doc_url = doc.get("url", "")
+                                        if doc_url:
+                                            st.markdown(f"&nbsp;&nbsp;- [{doc_title}]({doc_url})")
+                                        else:
+                                            st.markdown(f"&nbsp;&nbsp;- {doc_title}")
+
+                    # ── IRCoT 详情 ──────────────────────────────────────────
+                    if ircot.get("enabled"):
+                        hop_summaries_list = ircot.get("hop_summaries", [])
+                        total_gap = ircot.get("gap_contexts_added", 0)
+                        hops_done = ircot.get("hops_executed", 0)
+                        with st.expander(
+                            f"🔁 IRCoT 迭代推理检索详情（{hops_done} 跳，共补搜 {total_gap} 条）",
+                            expanded=False,
+                        ):
+                            for i, hop_s in enumerate(hop_summaries_list):
+                                hop_num = hop_s.get("hop", i + 1)
+                                hop_status = hop_s.get("status", "")
+                                st.markdown(f"**第 {hop_num} 跳**")
+
+                                reasoning_text = (
+                                    hop_s.get("reasoning_full", "")
+                                    or hop_s.get("reasoning_preview", "")
+                                )
+                                if reasoning_text:
+                                    with st.expander("推理链", expanded=False):
+                                        st.text(reasoning_text[:2000])
+
+                                gap_queries_list = hop_s.get("gap_queries", [])
+                                if gap_queries_list:
+                                    st.markdown("**补充查询：**")
+                                    for gq in gap_queries_list:
+                                        st.markdown(f"- `{gq}`")
+
+                                hop_docs = hop_s.get("retrieved_docs", [])
+                                if hop_docs:
+                                    st.markdown("**补搜资料：**")
+                                    for doc in hop_docs:
+                                        doc_title = doc.get("title", "") or "未知标题"
+                                        doc_url = doc.get("url", "")
+                                        if doc_url:
+                                            st.markdown(f"- [{doc_title}]({doc_url})")
+                                        else:
+                                            st.markdown(f"- {doc_title}")
+                                elif hop_status == "no_new_gaps":
+                                    st.caption("无新增信息缺口，迭代在此跳终止。")
+
+                                if i < len(hop_summaries_list) - 1:
+                                    st.markdown("---")
 
             # ── Writer ────────────────────────────────────────────────────────
             elif node == "writer":
@@ -504,7 +668,6 @@ try:
                     review_result: dict = full_state.get("review_result", {})
                     scores_dict: dict = review_result.get("scores", {})
                     weighted: float = float(review_result.get("weighted_score", 0.0))
-                    pass_threshold = float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
 
                     if scores_dict:
                         st.markdown("**📊 四维评分：**")
@@ -560,12 +723,12 @@ except Exception as exc:
 
 # ── 计时器：更新运行总时长 ──────────────────────────────────────────────────────
 elapsed_seconds = (datetime.now() - run_start_time).total_seconds()
-timer_placeholder.metric("运行总时长", _format_elapsed(elapsed_seconds))
+render_live_timer(timer_placeholder, run_start_time, stop_seconds=elapsed_seconds)
 
 
 # ── 保存历史记录（失败不中断主流程）──────────────────────────────────────────────
 try:
-    save_run_to_history(topic, max_revisions, final_state, elapsed_seconds)
+    save_run_to_history(topic, max_revisions, pass_threshold, final_state, elapsed_seconds)
 except Exception:
     pass
 

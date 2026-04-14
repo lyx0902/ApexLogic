@@ -30,8 +30,6 @@ MIN_DRAFT_LENGTH = 600
 
 # 四维权重
 SCORE_WEIGHTS = {"S1": 0.35, "S2": 0.25, "S3": 0.25, "S4": 0.15}
-# 通过阈值
-PASS_THRESHOLD = float(os.getenv("REVIEWER_PASS_THRESHOLD", "8.0"))
 # 强制回 Researcher 的单维阈值
 RESEARCHER_S1_THRESHOLD = 5
 RESEARCHER_S3_THRESHOLD = 4
@@ -515,7 +513,8 @@ def _llm_review(
         weighted_score = local_weighted
 
     # ── 通过判定（以加权总分为准，忽略模型自报的布尔值） ──────────
-    is_satisfactory = weighted_score >= PASS_THRESHOLD
+    _pass_threshold = float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
+    is_satisfactory = weighted_score >= _pass_threshold
 
     # ── 路由判定 ────────────────────────────────────────────────────
     if is_satisfactory:
@@ -616,6 +615,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     scores = review.get("scores", {})
     weighted_score = review.get("weighted_score", 0.0)
 
+    _pass_threshold = float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
     trace = list(state.get("execution_trace", []))
     trace.append(
         {
@@ -624,7 +624,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             "mode": review.get("review_mode", "rule"),
             "scores": scores,
             "weighted_score": weighted_score,
-            "pass_threshold": PASS_THRESHOLD,
+            "pass_threshold": _pass_threshold,
             "is_satisfactory": is_satisfactory,
             "next_route": next_route,
             "fact_issues": len(review.get("fact_issues", [])),
