@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
@@ -11,6 +12,31 @@ from dotenv import load_dotenv
 
 from core.graph import compile_graph
 from core.state import ResearchState, create_initial_state
+
+
+def _inject_citation_hyperlinks(text: str, contexts: List[Dict]) -> str:
+    """将正文中的 [Sn] 替换为 Markdown 超链接 [[Sn]](url)。
+    若该 citation_id 无对应 URL，则原样保留 [Sn] 不变。
+    """
+    url_map: Dict[str, str] = {}
+    for item in contexts:
+        if isinstance(item, dict):
+            cid = item.get("citation_id", "")
+            url = (item.get("url", "") or "").strip()
+            if cid and url:
+                url_map[cid] = url
+
+    if not url_map:
+        return text
+
+    def replace_match(m: re.Match) -> str:
+        cid = m.group(1)
+        url = url_map.get(cid)
+        if url:
+            return f"[[{cid}]]({url})"
+        return m.group(0)
+
+    return re.sub(r'\[(S\d+)\]', replace_match, text)
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,6 +90,7 @@ def _render_markdown_user(state: ResearchState) -> str:
     topic = state.get("topic", "")
     report = state.get("final_report", "") or state.get("draft", "") or ""
     contexts = state.get("retrieved_context", []) or []
+    report = _inject_citation_hyperlinks(report, contexts)
     lines: List[str] = [f"# 深度研究报告：{topic}", "", report if report else "(未生成正文)"]
 
     lines.append("")
@@ -94,6 +121,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
     trace = state.get("execution_trace", []) or []
     errors = state.get("errors", []) or []
     history = state.get("iteration_history", []) or []
+    report = _inject_citation_hyperlinks(report, contexts)
     quality_summary = state.get("source_quality_summary", {}) or {}
     bge_summary = quality_summary.get("bge_summary", {}) or {}
 

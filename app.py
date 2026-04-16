@@ -16,6 +16,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from export_report import _inject_citation_hyperlinks
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ApexLogic",
@@ -211,6 +213,7 @@ def save_run_to_history(
         "final_report": final_state.get("final_report") or final_state.get("draft", ""),
         "references": [
             {
+                "citation_id": ctx.get("citation_id", "") if isinstance(ctx, dict) else "",
                 "title": ctx.get("title", "") if isinstance(ctx, dict) else str(ctx),
                 "url": (
                     str(ctx.get("url", "") or "").strip()
@@ -273,13 +276,14 @@ def show_history_view(data: dict) -> None:
     st.markdown("## 📋 历史记录查看")
     st.caption(f"研究时间：{ts_str}　｜　主题：{data['topic']}")
 
-    hc1, hc2, hc3, hc4, hc5 = st.columns(5)
-    hc1.metric("研究主题", data["topic"][:18] + ("…" if len(data["topic"]) > 18 else ""))
-    hc2.metric("实际迭代轮数", data.get("iterations_done", "—"))
-    hc3.metric("加权总分", f"{data.get('weighted_score', 0):.2f}")
-    hc4.metric("运行总时长", _format_elapsed(data.get("elapsed_seconds", 0)))
+    # 研究主题单独一行，避免与其它指标挤在同一行
+    st.metric("研究主题", data["topic"][:30] + ("…" if len(data["topic"]) > 30 else ""))
+    hc1, hc2, hc3, hc4 = st.columns(4)
+    hc1.metric("实际迭代轮数", data.get("iterations_done", "—"))
+    hc2.metric("加权总分", f"{data.get('weighted_score', 0):.2f}")
+    hc3.metric("运行总时长", _format_elapsed(data.get("elapsed_seconds", 0)))
     pass_threshold = data.get("pass_threshold")
-    hc5.metric(
+    hc4.metric(
         "通过阈值",
         f"{float(pass_threshold):.1f}" if pass_threshold is not None else "—",
     )
@@ -290,6 +294,7 @@ def show_history_view(data: dict) -> None:
     report = data.get("final_report", "")
     if report:
         _, clean = extract_think(report)
+        clean = _inject_citation_hyperlinks(clean, data.get("references", []))
         st.markdown(clean)
         safe_t = re.sub(r"[^\w\u4e00-\u9fff]", "_", data["topic"])[:20]
         st.download_button(
@@ -631,14 +636,14 @@ except ImportError as exc:
     st.stop()
 
 
-# ── 运行参数概览（5 列：主题 / 轮数 / 通过阈值 / 启动时间 / 运行总时长）──────────
+# ── 运行参数概览（研究主题单行 + 4 列其余参数）──────────
 display_start_time = datetime.now()
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("研究主题", topic[:16] + ("…" if len(topic) > 16 else ""))
-c2.metric("最大反思轮数", max_revisions)
-c3.metric("通过阈值", f"{pass_threshold:.1f}")
-c4.metric("启动时间", display_start_time.strftime("%H:%M:%S"))
-timer_placeholder = c5.empty()
+st.metric("研究主题", topic[:30] + ("…" if len(topic) > 30 else ""))
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("最大反思轮数", max_revisions)
+c2.metric("通过阈值", f"{pass_threshold:.1f}")
+c3.metric("启动时间", display_start_time.strftime("%H:%M:%S"))
+timer_placeholder = c4.empty()
 # run_start_time 和计时器将在 graph.stream() 开始前设定，精确计量执行时长
 st.markdown("---")
 
@@ -966,6 +971,7 @@ final_draft: str = final_state.get("final_report") or final_state.get("draft", "
 
 if final_draft:
     _, clean_report = extract_think(final_draft)
+    clean_report = _inject_citation_hyperlinks(clean_report, final_state.get("retrieved_context", []))
     st.markdown(clean_report)
 
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
