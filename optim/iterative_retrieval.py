@@ -217,11 +217,16 @@ class IterativeRetrievalOptimizer:
         self,
         llm: Any,
         topic: str,
-        contexts: List[Dict[str, Any]],
+        current_docs: List[Dict[str, Any]],
         hop: int,
-        existing_reasoning: str,
+        prior_reasoning: str,
     ) -> Tuple[str, List[str]]:
         """调用 LLM 生成推理链和缺口查询列表。
+
+        参数
+        ----
+        current_docs    : 本跳可用的文档（首跳为初始文档，后续跳为上一跳检索到的新文档）
+        prior_reasoning : 上一跳的推理结果（首跳为空）
 
         返回 (reasoning_text, gap_queries_list)
         失败时返回 ("", [])
@@ -232,10 +237,10 @@ class IterativeRetrievalOptimizer:
         system_prompt = ITERATIVE_REASONING_SYSTEM_PROMPT
         user_prompt = build_iterative_reasoning_prompt(
             topic=topic,
-            contexts=contexts,
+            current_docs=current_docs,
             hop=hop,
             max_gap_queries=self.gap_queries_per_hop,
-            existing_reasoning=existing_reasoning,
+            prior_reasoning=prior_reasoning,
         )
 
         try:
@@ -274,6 +279,63 @@ class IterativeRetrievalOptimizer:
         except Exception:
             return []
 
+    # ── 内部：首跳文档智能排序 ────────────────────────────────────────
+
+    def _select_initial_docs(
+        self,
+        topic: str,
+        contexts: List[Dict[str, Any]],
+        top_k: int = 8,
+    ) -> List[Dict[str, Any]]:
+        """按标题与主题的关键词匹配度排序，选择最相关的前 top_k 条文档。
+
+        参数
+        ----
+        topic    : 研究主题
+        contexts : 全部候选文档
+        top_k    : 返回文档数量
+
+        返回
+        ----
+        排序后的前 top_k 条文档
+        """
+        if not contexts:
+            return []
+
+        # 提取主题关键词（中英文分词）
+        topic_lower = topic.lower()
+        # 简单分词：按空格、标点分割
+        import re
+        tokens = re.findall(r'[\w]+', topic_lower)
+        # 过滤停用词和过短词
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'from', 'is', 'are', 'was', 'were'}
+        topic_keywords = [t for t in tokens if len(t) > 2 and t not in stop_words]
+
+        if not topic_keywords:
+            # 无法提取关键词，返回原始顺序的前 top_k 条
+            return contexts[:top_k]
+
+        # 按标题匹配度打分
+        scored: List[tuple[float, Dict[str, Any]]] = []
+        for doc in contexts:
+            title = (doc.get("title", "") or "").lower()
+            summary = (doc.get("core_summary", "") or "").lower()
+
+            # 计算关键词命中数（标题权重更高）
+            title_hits = sum(1 for kw in topic_keywords if kw in title)
+            summary_hits = sum(1 for kw in topic_keywords if kw in summary)
+
+            # 综合得分：标题命中 * 2 + 摘要命中 * 1
+            score = title_hits * 2.0 + summary_hits * 1.0
+
+            scored.append((score, doc))
+
+        # 按得分降序排序
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # 返回前 top_k 条
+        return [doc for _, doc in scored[:top_k]]
+
     # ── 公开接口 ──────────────────────────────────────────────────────
 
     def run(
@@ -282,7 +344,7 @@ class IterativeRetrievalOptimizer:
         contexts: List[Dict[str, Any]],
         existing_queries: Optional[List[str]] = None,
     ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
-        """执行迭代检索-推理循环。
+        """执行迭代检索-推理循环（推理链驱动架构）。
 
         参数
         ----
@@ -293,10 +355,10 @@ class IterativeRetrievalOptimizer:
         返回
         ----
         gap_contexts     : 所有跳中新增的原始文档列表（供调用方合并去重）
-        reasoning_chains : 每跳的推理链文本列表
+        reasoning_chains : 每跳的推理链文本列表（逐步增长的推理链）
         hop_summaries    : 每跳的统计摘要列表（含 gap_queries, new_contexts 等）
         """
-        # 检查前置条件
+        # 检查前置��件
         if not contexts:
             return [], [], []
 
@@ -309,23 +371,31 @@ class IterativeRetrievalOptimizer:
         reasoning_chains: List[str] = []
         hop_summaries: List[Dict[str, Any]] = []
 
-        # 用于传入 LLM 的工作上下文（每跳追加新文档的轻量副本）
-        working_contexts: List[Dict[str, Any]] = list(contexts)
-        existing_reasoning: str = ""
+        # 首跳：智能选择最相关的初始文档
+        initial_docs = self._select_initial_docs(topic, contexts, top_k=8)
+        current_docs = initial_docs
+        prior_reasoning = ""
 
         for hop in range(self.max_hops):
-            # 1. 生成推理链 + 缺口查询
+            # 1. 生成推理链 + 缺口查询（基于当前文档 + 上一跳推理）
             reasoning, gap_queries = self._call_reasoning_llm(
                 llm=llm,
                 topic=topic,
-                contexts=working_contexts,
+                current_docs=current_docs,
                 hop=hop,
-                existing_reasoning=existing_reasoning,
+                prior_reasoning=prior_reasoning,
             )
 
+            # 2. 推理链逐步增长
             if reasoning:
                 reasoning_chains.append(reasoning)
-                existing_reasoning = reasoning
+                prior_reasoning = reasoning  # 下一跳将基于此推理继续
+
+            # 3. 检查终止条件：推理完整 或 无新缺口
+            reasoning_complete = any(
+                keyword in reasoning.lower()
+                for keyword in ["已得到完整结论", "推理完成", "已充分回答", "无需进一步"]
+            )
 
             # 去除与已有查询高度重叠的 gap_queries
             filtered_queries: List[str] = []
@@ -338,19 +408,20 @@ class IterativeRetrievalOptimizer:
 
             filtered_queries = filtered_queries[: self.gap_queries_per_hop]
 
-            if not filtered_queries:
+            if reasoning_complete or not filtered_queries:
                 hop_summaries.append({
                     "hop": hop + 1,
-                    "status": "no_new_gaps",
+                    "status": "completed" if reasoning_complete else "no_new_gaps",
                     "reasoning_preview": (reasoning or "")[:150],
                     "reasoning_full": (reasoning or ""),
                     "gap_queries": [],
                     "new_contexts": 0,
                     "retrieved_docs": [],
+                    "termination_reason": "reasoning_complete" if reasoning_complete else "no_gaps",
                 })
                 break
 
-            # 2. 执行补搜
+            # 4. 执行补搜
             hop_new_contexts: List[Dict[str, Any]] = []
             for q in filtered_queries:
                 results = self._search_gap(q)
@@ -371,9 +442,9 @@ class IterativeRetrievalOptimizer:
                 ],
             })
 
-            # 3. 更新 working_contexts（为下一跳提供更完整的上下文）
+            # 5. 准备下一跳的输入：只使用本跳新检索到的文档
             if hop_new_contexts:
-                working_contexts = list(working_contexts) + [
+                current_docs = [
                     {
                         "title": r.get("title", ""),
                         "core_summary": (r.get("content", "") or "")[:400],
@@ -383,5 +454,8 @@ class IterativeRetrievalOptimizer:
                     }
                     for r in hop_new_contexts
                 ]
+            else:
+                # 无新文档，终止循环
+                break
 
         return all_gap_contexts, reasoning_chains, hop_summaries

@@ -119,15 +119,32 @@ S4 结论可执行性（权重 15%）
 """
 
 
-ITERATIVE_REASONING_SYSTEM_PROMPT = """你是一位严谨的研究分析师，擅长从已有检索材料中提炼推理链，并精准识别信息缺口。
+ITERATIVE_REASONING_SYSTEM_PROMPT = """你是一位严谨的研究分析师，擅长进行多跳链式推理，逐步深入回答研究问题。
 
-【任务】
-1. 基于提供的检索上下文，归纳当前已知的核心结论（2~4 句，简洁客观）。
-2. 识别为了全面回答研究主题仍然缺失的关键信息，并将每个缺口直接转化为一条精准搜索查询。
+【核心任务】
+你正在执行 IRCoT（Interleaving Retrieval with Chain-of-Thought）推理流程：
+- 每一跳基于上一跳的推理结论和新检索到的信息，继续推理下一步
+- 推理链是逐步增长的，每一步都明确依赖前一步的结论
+- 当推理链足以回答研究主题时，明确说明"已得到完整结论"
+
+【推理规范】
+1. **首跳（第 1 跳）**：
+   - 基于初始检索材料，生成第一步推理（2~4 句核心结论）
+   - 明确指出"基于初始材料，我们已知..."
+   - 识别推理链的下一步需要什么关键信息
+
+2. **后续跳（第 2+ 跳）**：
+   - 先简要回顾上一跳的推理结论（1 句话）
+   - 结合本跳新检索到的信息，明确说明"基于新信息，我们可以进一步得出..."
+   - 继续推理下一步，或判断推理链是否已完整
+
+3. **终止条件**：
+   - 如果推理链已足以全面回答研究主题，在 reasoning 中明确说明"已得到完整结论"或"推理完成"
+   - 如果仍有关键信息缺口，生成精准的补充查询
 
 【输出规范】
 只输出合法 JSON，格式如下，禁止任何 Markdown 包裹或额外文字：
-{"reasoning":"已知结论摘要...","gap_queries":["搜索查询1","搜索查询2"]}
+{"reasoning":"本跳推理步骤（明确说明基于哪些新信息得出什么结论）","gap_queries":["下一步需要的信息查询1","查询2"]}
 
 【gap_queries 撰写要求】
 - 条数严格等于要求数量
@@ -135,6 +152,7 @@ ITERATIVE_REASONING_SYSTEM_PROMPT = """你是一位严谨的研究分析师，�
 - 避免"更多信息"、"详细介绍"等模糊措辞
 - 避免与已有查询高度重复的方向
 - 优先覆盖：对立观点、失败案例、定量数据、最新进展（2026）
+- 查询应针对"推理链下一步必需的信息"，而非泛泛补充
 """
 
 
@@ -212,26 +230,26 @@ def build_aqd_decompose_prompt(
 
 def build_iterative_reasoning_prompt(
     topic: str,
-    contexts: List[Dict[str, Any] | str],
+    current_docs: List[Dict[str, Any] | str],
     hop: int,
     max_gap_queries: int,
-    existing_reasoning: str = "",
+    prior_reasoning: str = "",
 ) -> str:
-    """构建单跳推理-缺口识别提示。
+    """构建单跳推理-缺口识别提示（链式推理架构）。
 
     参数
     ----
-    topic           : 研究主题
-    contexts        : 当前所有上下文（已归一化，含 core_summary）
-    hop             : 当前跳索引（0-based）
-    max_gap_queries : 要求输出的 gap_queries 数量
-    existing_reasoning: 前序跳的推理摘要，用于避免重复
+    topic          : 研究主题
+    current_docs   : 本跳可用的文档（首跳为初始文档，后续跳为上一跳检索到的新文档）
+    hop            : 当前跳索引（0-based）
+    max_gap_queries: 要求输出的 gap_queries 数量
+    prior_reasoning: 上一跳的推理结果（首跳为空）
     """
-    # 最多展示 8 条，每条取 title + core_summary（精简 token 消耗）
+    # 展示本跳的文档（最多 8 条，每条取 title + core_summary）
     ctx_chunks: List[str] = []
-    for i, item in enumerate(contexts[:12], start=1):
+    for i, item in enumerate(current_docs[:8], start=1):
         if isinstance(item, dict):
-            cid = item.get("citation_id", f"S{i}")
+            cid = item.get("citation_id", f"Doc{i}")
             title = (item.get("title", "") or "")[:80]
             summary = (
                 item.get("core_summary", "")
@@ -240,25 +258,39 @@ def build_iterative_reasoning_prompt(
             )[:400]
             ctx_chunks.append(f"[{cid}] {title}\n  {summary}")
         else:
-            ctx_chunks.append(f"[S{i}] {str(item)[:400]}")
+            ctx_chunks.append(f"[Doc{i}] {str(item)[:400]}")
 
     ctx_text = "\n\n".join(ctx_chunks) if ctx_chunks else "（暂无检索结果）"
 
-    prior_block = ""
-    if existing_reasoning:
-        prior_block = (
-            f"\n\n【前序推理链（第 {hop} 跳前已知结论）】\n"
-            f"{existing_reasoning[:800]}"
+    # 根据跳数生成不同的指令
+    if hop == 0:
+        # 首跳：基于初始文档生成第一步推理
+        instruction = (
+            f"这是第 1 跳推理。\n\n"
+            f"【初始检索材料（共 {len(current_docs)} 条）】\n"
+            f"{ctx_text}\n\n"
+            f"请基于上述初始材料，生成第一步推理（2~4 句核心结论），"
+            f"并识别推理链的下一步需要什么关键信息。"
+        )
+    else:
+        # 后续跳：基于上一跳推理 + 本跳新文档继续推理
+        prior_preview = prior_reasoning[:600] if prior_reasoning else "（无）"
+        instruction = (
+            f"这是第 {hop + 1} 跳推理。\n\n"
+            f"【上一跳推理结论】\n"
+            f"{prior_preview}\n\n"
+            f"【本跳新检索到的信息（共 {len(current_docs)} 条）】\n"
+            f"{ctx_text}\n\n"
+            f"请结合上一跳的推理结论和本跳新检索到的信息，继续推理下一步。\n"
+            f"明确说明\"基于新信息，我们可以进一步得出...\"。\n"
+            f"如果推理链已足以回答研究主题，请在 reasoning 中说明\"已得到完整结论\"。"
         )
 
     return (
-        f"研究主题: {topic}\n"
-        f"当前为第 {hop + 1} 跳推理。"
-        f"{prior_block}\n\n"
-        f"【当前检索上下文（共 {len(contexts)} 条，以下展示前 8 条摘要）】\n"
-        f"{ctx_text}\n\n"
-        f"请生成推理摘要，并输出恰好 {max_gap_queries} 条补充搜索查询，"
-        f"直接针对研究主题中尚未被现有材料覆盖的关键信息缺口。"
+        f"研究主题: {topic}\n\n"
+        f"{instruction}\n\n"
+        f"请生成本跳推理，并输出恰好 {max_gap_queries} 条补充搜索查询，"
+        f"直接针对推理链下一步必需的关键信息缺口。"
     )
 
 

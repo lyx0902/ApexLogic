@@ -443,8 +443,29 @@ def show_history_view(data: dict) -> None:
                                             st.markdown(f"- {doc_title}")
                                 elif hop_status == "no_new_gaps":
                                     st.caption("无新增信息缺口，迭代在此跳终止。")
+
+                                # 展示本跳推理链
+                                h_reasoning_full = hop_s.get("reasoning_full", "")
+                                h_reasoning_preview = hop_s.get("reasoning_preview", "")
+                                if h_reasoning_full:
+                                    with st.expander("💭 本跳推理链", expanded=False):
+                                        st.markdown(h_reasoning_full)
+                                elif h_reasoning_preview:
+                                    st.caption(f"💭 推理预览：{h_reasoning_preview}")
+
                                 if i < len(h_hop_summaries) - 1:
                                     st.markdown("---")
+
+                            # 展示完整推理链记录
+                            h_reasoning_chains = run_metadata.get("reasoning_chains", [])
+                            if h_reasoning_chains:
+                                st.markdown("")  # 空行分隔
+                                with st.expander("📜 完整推理链记录", expanded=False):
+                                    for i, chain in enumerate(h_reasoning_chains, 1):
+                                        st.markdown(f"**第 {i} 跳推理：**")
+                                        st.markdown(chain)
+                                        if i < len(h_reasoning_chains):
+                                            st.markdown("---")
 
                     st.markdown("---")
 
@@ -805,8 +826,28 @@ try:
                                 elif hop_status == "no_new_gaps":
                                     st.caption("无新增信息缺口，迭代在此跳终止。")
 
+                                # 展示本跳推理链
+                                reasoning_full = hop_s.get("reasoning_full", "")
+                                reasoning_preview = hop_s.get("reasoning_preview", "")
+                                if reasoning_full:
+                                    with st.expander("💭 本跳推理链", expanded=False):
+                                        st.markdown(reasoning_full)
+                                elif reasoning_preview:
+                                    st.caption(f"💭 推理预览：{reasoning_preview}")
+
                                 if i < len(hop_summaries_list) - 1:
                                     st.markdown("---")
+
+                            # 展示完整推理链记录
+                            reasoning_chains = full_state.get("reasoning_chains", [])
+                            if reasoning_chains:
+                                st.markdown("")  # 空行分隔
+                                with st.expander("📜 完整推理链记录", expanded=False):
+                                    for i, chain in enumerate(reasoning_chains, 1):
+                                        st.markdown(f"**第 {i} 跳推理：**")
+                                        st.markdown(chain)
+                                        if i < len(reasoning_chains):
+                                            st.markdown("---")
 
                 # 采集 Researcher 阶段快照（与直播展示字段完全一致）
                 iteration_snapshots.append({
@@ -817,6 +858,7 @@ try:
                     "source_quality_summary": full_state.get("source_quality_summary", {}),
                     "query_plan": full_state.get("query_plan", {}),
                     "iterative_retrieval_summary": full_state.get("iterative_retrieval_summary", {}),
+                    "reasoning_chains": full_state.get("reasoning_chains", []),
                     "retrieved_context_count": len(full_state.get("retrieved_context", [])),
                 })
 
