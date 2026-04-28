@@ -277,7 +277,7 @@ def show_history_view(data: dict) -> None:
     st.caption(f"研究时间：{ts_str}　｜　主题：{data['topic']}")
 
     # 研究主题单独一行，避免与其它指标挤在同一行
-    st.metric("研究主题", data["topic"][:30] + ("…" if len(data["topic"]) > 30 else ""))
+    st.metric("研究主题", data["topic"][:90] + ("…" if len(data["topic"]) > 90 else ""))
     hc1, hc2, hc3, hc4 = st.columns(4)
     hc1.metric("实际迭代轮数", data.get("iterations_done", "—"))
     hc2.metric("加权总分", f"{data.get('weighted_score', 0):.2f}")
@@ -638,7 +638,7 @@ except ImportError as exc:
 
 # ── 运行参数概览（研究主题单行 + 4 列其余参数）──────────
 display_start_time = datetime.now()
-st.metric("研究主题", topic[:30] + ("…" if len(topic) > 30 else ""))
+st.metric("研究主题", topic[:90] + ("…" if len(topic) > 90 else ""))
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("最大反思轮数", max_revisions)
 c2.metric("通过阈值", f"{pass_threshold:.1f}")
