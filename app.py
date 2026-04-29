@@ -512,8 +512,28 @@ def show_history_view(data: dict) -> None:
                                 elif h_reasoning_preview:
                                     st.caption(f"💭 推理预览：{h_reasoning_preview}")
 
-                                if i < len(hop_summaries_list) - 1:
+                                if i < len(h_hop_summaries) - 1:
                                     st.markdown("---")
+
+                            # 展示最终总结推理链（如果有）
+                            h_final_summary_hop = None
+                            for hop_s in h_hop_summaries:
+                                if hop_s.get("status") == "final_summary":
+                                    h_final_summary_hop = hop_s
+                                    break
+
+                            if h_final_summary_hop:
+                                st.markdown("")  # 空行分隔
+                                with st.expander("🎯 最终总结推理链", expanded=False):
+                                    st.caption(
+                                        "💡 基于最后一跳补搜的文档生成的总结性推理，"
+                                        "确保所有检索到的信息都被充分利用。"
+                                    )
+                                    h_final_reasoning = h_final_summary_hop.get("reasoning_full", "")
+                                    if h_final_reasoning:
+                                        st.markdown(h_final_reasoning)
+                                    else:
+                                        st.caption("（无最终总结内容）")
 
                             # 展示完整推理链记录（增强版：显示跨轮记忆）
                             h_reasoning_chains = run_metadata.get("reasoning_chains", [])
@@ -918,6 +938,26 @@ try:
 
                                 if i < len(hop_summaries_list) - 1:
                                     st.markdown("---")
+
+                            # 展示最终总结推理链（如果有）
+                            final_summary_hop = None
+                            for hop_s in hop_summaries_list:
+                                if hop_s.get("status") == "final_summary":
+                                    final_summary_hop = hop_s
+                                    break
+
+                            if final_summary_hop:
+                                st.markdown("")  # 空行分隔
+                                with st.expander("🎯 最终总结推理链", expanded=False):
+                                    st.caption(
+                                        "💡 基于最后一跳补搜的文档生成的总结性推理，"
+                                        "确保所有检索到的信息都被充分利用。"
+                                    )
+                                    final_reasoning = final_summary_hop.get("reasoning_full", "")
+                                    if final_reasoning:
+                                        st.markdown(final_reasoning)
+                                    else:
+                                        st.caption("（无最终总结内容）")
 
                             # 展示完整推理链记录（增强版：显示跨轮记忆）
                             reasoning_chains = full_state.get("reasoning_chains", [])

@@ -183,7 +183,7 @@ class IterativeRetrievalOptimizer:
         self,
         max_hops: int = 4,
         gap_queries_per_hop: int = 2,
-        results_per_query: int = 4,
+        results_per_query: int = 3,
     ) -> None:
         # 环境变量优先覆盖构造参数
         self.max_hops = int(os.getenv("MAX_HOPS", str(max_hops)))
@@ -220,6 +220,7 @@ class IterativeRetrievalOptimizer:
         current_docs: List[Dict[str, Any]],
         hop: int,
         prior_reasoning: str,
+        is_final_summary: bool = False,
     ) -> Tuple[str, List[str]]:
         """调用 LLM 生成推理链和缺口查询列表。
 
@@ -227,6 +228,7 @@ class IterativeRetrievalOptimizer:
         ----
         current_docs    : 本跳可用的文档（首跳为初始文档，后续跳为上一跳检索到的新文档）
         prior_reasoning : 上一跳的推理结果（首跳为空）
+        is_final_summary: 是否为最终总结推理（不生成gap_queries）
 
         返回 (reasoning_text, gap_queries_list)
         失败时返回 ("", [])
@@ -241,6 +243,7 @@ class IterativeRetrievalOptimizer:
             hop=hop,
             max_gap_queries=self.gap_queries_per_hop,
             prior_reasoning=prior_reasoning,
+            is_final_summary=is_final_summary,
         )
 
         try:
@@ -473,5 +476,36 @@ class IterativeRetrievalOptimizer:
             else:
                 # 无新文档，终止循环
                 break
+
+        # ── 循环后最终总结：确保最后一跳的文档被总结 ──────────────────────
+        # 检查是否需要生成最终总结推理链
+        enable_final_summary = os.getenv("IRCOT_ENABLE_FINAL_SUMMARY", "1").strip() == "1"
+
+        if enable_final_summary and all_gap_contexts and current_docs and reasoning_chains:
+            try:
+                final_reasoning, _ = self._call_reasoning_llm(
+                    llm=llm,
+                    topic=topic,
+                    current_docs=current_docs,
+                    hop=len(reasoning_chains),  # 作为额外的一跳
+                    prior_reasoning=reasoning_chains[-1],
+                    is_final_summary=True,
+                )
+
+                if final_reasoning:
+                    reasoning_chains.append(final_reasoning)
+                    hop_summaries.append({
+                        "hop": len(reasoning_chains),
+                        "status": "final_summary",
+                        "reasoning_preview": final_reasoning[:150],
+                        "reasoning_full": final_reasoning,
+                        "gap_queries": [],
+                        "new_contexts": 0,
+                        "retrieved_docs": [],
+                        "note": "最终总结推理（基于最后一跳的补搜文档）",
+                    })
+            except Exception:
+                # 最终总结失败不影响主流程
+                pass
 
         return all_gap_contexts, reasoning_chains, hop_summaries

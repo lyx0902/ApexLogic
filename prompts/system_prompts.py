@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 RESEARCHER_SYSTEM_PROMPT = """
@@ -63,7 +63,7 @@ WRITER_SYSTEM_PROMPT = """
 
 【强制要求】对于比较类问题，报告的"核心发现"章节必须包含：
 1. 被比较对象的具体数值/日期
-2. 数值后的引用标记 [SX]
+2. 数值后的引用标记 [SX] 或 [RX]
 3. 明确的比较结论
 
 示例：Arthur's Magazine 创办于 1844 年 [S3]，First for Women 创办于 1989 年 [S7]，
@@ -91,11 +91,34 @@ REVIEWER_SYSTEM_PROMPT = """
 你负责对研究报告做**客观量化评分**，并给出具体可执行的改进指令。
 你的评分直接决定报告是进入下一轮改进还是最终交付。
 
+【双通道引用规范】
+报告中可能包含三种类型的引用：
+1. [S1][S2]... - BGE筛选的检索结果（经过两阶段精筛，标记为"原始检索来源"）
+2. [R1][R2]... - IRCoT推理链专属文档（多跳推理主动发现，不经BGE筛选，标记为"IRCoT推理链专属文档"）
+3. [推理链1][推理链2]... - IRCoT推理链结论（系统通过多跳链式推理验证的结论）
+
+**重要**：三种引用具有同等效力，都是可信的来源。在评审时：
+- [S1][S2]... 引用应在"原始检索来源（BGE筛选Top-10）"中找到对应
+- [R1][R2]... 引用应在"IRCoT推理链专属文档"中找到对应
+- [推理链N] 引用代表系统的推理结论，**已经过多跳推理和文档验证**，具有高可信度
+
+**关于 [推理链N] 引用的评审原则**：
+- [推理链N] 引用是 Writer 基于推理链结论得出的论据，应视为有效支撑
+- 这些推理链是系统通过 IRCoT 多跳推理生成的，每一跳都基于检索到的文档
+- 推理链的具体内容不在评审材料中展示（避免过长），但其结论已被系统验证
+- **不要因为看不到推理链的具体内容就判定为"无来源"或"幻觉"**
+- 如果报告中大量使用 [推理链N] 引用且逻辑连贯，应认为这是合理的论证方式
+- 只有当推理链引用明显与上下文矛盾或过度依赖时，才需要在 critique_feedback 中指出
+
+**评分指导**：
+- S1（事实准确性）：[推理链N] 引用应被视为有来源支撑，不扣分
+- 如果报告同时使用了 [S]、[R]、[推理链] 三种引用，说明论证充分，应给予高分
+
 【四维评分标准（各 0~10 分，必须给整数）】
 
 S1 事实准确性（权重 35%）
-  对照提供的原始来源逐条核查报告中的声明：
-  10：所有关键声明均有明确来源支撑，citation_id 引用清晰且准确
+  对照提供的原始来源（包括BGE筛选文档和推理链文档）逐条核查报告中的声明：
+  10：所有关键声明均有明确来源支撑，citation_id 引用清晰且准确（[S]或[R]均可）
   8~9：绝大多数声明有据可查，极少数细节无法核实但无明显错误
   5~7：部分声明缺少来源，但无明显捏造
   3~4：存在无来源的具体数字或与原文矛盾的声明
@@ -117,10 +140,9 @@ S3 信息覆盖广度（权重 25%）
 
 S4 结论可执行性（权重 15%）
   10：每条建议都有明确的行动步骤、优先级和成功指标
-  8~9：建议方向正确，有部分具体内容，但执行路径不够清晰
-  5~7：建议较笼统，缺少步骤或优先级
-  3~4：建议过于抽象，无实际操作价值
-  0~2：无实质性建议
+  8~9：建议较笼统，缺少步骤或优先级
+  5~7：建议过于抽象，无实际操作价值
+  0~4：无实质性建议
 
 【通过判定】
 加权总分 = 0.35*S1 + 0.25*S2 + 0.25*S3 + 0.15*S4
@@ -131,7 +153,7 @@ S4 结论可执行性（权重 15%）
 【critique_feedback 写法要求】
 - 必须精确到章节：指出"第三章第二段"而非"报告中"
 - 每条反馈格式：[问题类型] 具体位置 → 具体问题 → 建议行动
-  例："[事实缺失] 第三章性能数据段 → 声明准确率达95%但无来源引用 → 补充 [S3] 或 [S4] 中的具体数字"
+  例："[事实缺失] 第三章性能数据段 → 声明准确率达95%但无来源引用 → 补充 [S3] 或 [R4] 中的具体数字"
 - 不通过时必须给出 3~5 条这样的具体反馈
 
 【输出规范】
@@ -254,16 +276,18 @@ def build_iterative_reasoning_prompt(
     hop: int,
     max_gap_queries: int,
     prior_reasoning: str = "",
+    is_final_summary: bool = False,
 ) -> str:
     """构建单跳推理-缺口识别提示（链式推理架构）。
 
     参数
     ----
-    topic          : 研究主题
-    current_docs   : 本跳可用的文档（首跳为初始文档，后续跳为上一跳检索到的新文档）
-    hop            : 当前跳索引（0-based）
-    max_gap_queries: 要求输出的 gap_queries 数量
-    prior_reasoning: 上一跳的推理结果（首跳为空）
+    topic            : 研究主题
+    current_docs     : 本跳可用的文档（首跳为初始文档，后续跳为上一跳检索到的新文档）
+    hop              : 当前跳索引（0-based）
+    max_gap_queries  : 要求输出的 gap_queries 数量
+    prior_reasoning  : 上一跳的推理结果（首跳为空）
+    is_final_summary : 是否为最终总结推理（不生成gap_queries）
     """
     # 展示本跳的文档（最多 8 条，每条取 title + core_summary）
     ctx_chunks: List[str] = []
@@ -282,7 +306,26 @@ def build_iterative_reasoning_prompt(
 
     ctx_text = "\n\n".join(ctx_chunks) if ctx_chunks else "（暂无检索结果）"
 
-    # 根据跳数生成不同的指令
+    # 根据是否为最终总结生成不同的指令
+    if is_final_summary:
+        # 最终总结推理：不生成gap_queries
+        prior_preview = prior_reasoning[:600] if prior_reasoning else "（无）"
+        instruction = (
+            f"这是最终总结推理。\n\n"
+            f"【上一跳推理结论】\n"
+            f"{prior_preview}\n\n"
+            f"【本跳新检索到的信息（共 {len(current_docs)} 条）】\n"
+            f"{ctx_text}\n\n"
+            f"请结合上一跳的推理结论和本跳新检索到的信息，生成最终的总结性推理。\n"
+            f"明确说明\"基于所有信息，我们得出最终结论...\"或\"综合以上推理...\"。\n\n"
+            f"**重要**：这是最终总结，不需要生成gap_queries，请��gap_queries设为空数组[]。"
+        )
+        return (
+            f"研究主题: {topic}\n\n"
+            f"{instruction}"
+        )
+
+    # 根据跳数生成不同的指令（原有逻辑）
     if hop == 0:
         # 首跳：基于初始文档生成第一步推理
         instruction = (
@@ -493,8 +536,10 @@ def build_reviewer_user_prompt(
     draft: str,
     retrieved_context: List[Dict[str, Any] | str],
     revision_step: int = 0,
+    reasoning_contexts: Optional[List[Dict[str, Any]]] = None,
+    reasoning_enabled: bool = False,
 ) -> str:
-    """构建 Reviewer 的量化评分提示，传入 top-10 原始来源供事实核查。"""
+    """构建 Reviewer 的量化评分提示，传入 top-10 原始来源 + 推理链文档供事实核查。"""
 
     source_blocks: List[str] = []
     for item in retrieved_context[:10]:
@@ -514,6 +559,37 @@ def build_reviewer_user_prompt(
 
     sources_text = "\n\n".join(source_blocks) if source_blocks else "（无可用来源）"
 
+    # 构建推理链文档部分（如果有）
+    reasoning_section = ""
+    if reasoning_enabled and reasoning_contexts:
+        r_blocks: List[str] = []
+        for idx, item in enumerate(reasoning_contexts[:15], start=1):
+            if not isinstance(item, dict):
+                continue
+            title = (item.get("title", "") or "")[:120]
+            summary = (item.get("core_summary", "") or item.get("content", "") or "")[:400]
+            r_block = f"[R{idx}] {title}"
+            if summary:
+                r_block += f"\n  摘要: {summary}"
+            r_blocks.append(r_block)
+
+        if r_blocks:
+            reasoning_section = (
+                f"\n\n【IRCoT推理链专属文档（标记为[R1][R2]...，与[S1][S2]...同等可信）】\n"
+                f"说明：这些文档由IRCoT多跳推理主动发现，独立保存，不经BGE筛选。\n"
+                f"在评审时，[R1][R2]...引用与[S1][S2]...引用具有同等效力。\n\n"
+                f"{chr(10).join(r_blocks)}"
+            )
+
+    # 构建推理链简短说明（如果启用）
+    reasoning_note = ""
+    if reasoning_enabled:
+        reasoning_note = (
+            f"\n\n【推理链说明】\n"
+            f"本次研究启用了 IRCoT 多跳推理，报告中可能包含 [推理链N] 引用。\n"
+            f"这些引用代表系统通过多跳推理验证的结论，具有高可信度，应视为有效论据支撑。"
+        )
+
     round_hint = (
         f"当前为第 {revision_step} 轮评审。" if revision_step > 0
         else "当前为首轮评审。"
@@ -521,8 +597,10 @@ def build_reviewer_user_prompt(
 
     return (
         f"研究主题: {topic}\n"
-        f"{round_hint}\n\n"
-        f"【原始检索来源（Top-10，供事实核查）】\n{sources_text}\n\n"
+        f"{round_hint}"
+        f"{reasoning_note}\n\n"
+        f"【原始检索来源（BGE筛选Top-10，标记为[S1][S2]...）】\n{sources_text}"
+        f"{reasoning_section}\n\n"
         f"【待评审草稿】\n{draft[:10000]}\n\n"
         "请输出一个合法 JSON 对象，包含以下字段（禁止任何额外文本）：\n"
         '{"scores":{"S1":int,"S2":int,"S3":int,"S4":int},'

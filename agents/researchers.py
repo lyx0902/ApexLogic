@@ -545,9 +545,9 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     if iter_enabled and normalized_contexts:
         try:
-            max_hops = int(os.getenv("MAX_HOPS", "2"))
+            max_hops = int(os.getenv("MAX_HOPS", "4"))
             gap_queries_per_hop = int(os.getenv("GAP_QUERIES_PER_HOP", "2"))
-            results_per_query = int(os.getenv("GAP_RESULTS_PER_QUERY", "4"))
+            results_per_query = int(os.getenv("GAP_RESULTS_PER_QUERY", "3"))
 
             optimizer = IterativeRetrievalOptimizer(
                 max_hops=max_hops,

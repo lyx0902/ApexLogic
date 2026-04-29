@@ -4,7 +4,7 @@ import ast
 import json
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:
     from core.state import ResearchState
@@ -455,8 +455,10 @@ def _llm_review(
     draft: str,
     retrieved_context: List[Dict[str, Any] | str],
     revision_step: int = 0,
+    reasoning_contexts: Optional[List[Dict[str, Any]]] = None,
+    reasoning_enabled: bool = False,
 ) -> Dict[str, Any]:
-    """调用 DeepSeek 输出四维量化评分 JSON，传入 top-10 原始来源供事实核查。"""
+    """调用 DeepSeek 输出四维量化评分 JSON，传入 top-10 原始来源 + 推理链文档供事实核查。"""
 
     if ChatOpenAI is None:
         raise RuntimeError("langchain_openai 未安装")
@@ -478,7 +480,14 @@ def _llm_review(
         [
             ("system", REVIEWER_SYSTEM_PROMPT),
             ("system", build_reviewer_rule_hint()),
-            ("human", build_reviewer_user_prompt(topic, draft, retrieved_context, revision_step=revision_step - 1)),
+            ("human", build_reviewer_user_prompt(
+                topic,
+                draft,
+                retrieved_context,
+                revision_step=revision_step - 1,
+                reasoning_contexts=reasoning_contexts,
+                reasoning_enabled=reasoning_enabled,
+            )),
         ]
     )
 
@@ -587,6 +596,10 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     draft = state.get("draft", "")
     errors = list(state.get("errors", []))
 
+    # 读取推理链数据（双通道上下文系统）
+    reasoning_contexts = list(state.get("reasoning_contexts", []))
+    reasoning_enabled = state.get("reasoning_enabled", False)
+
     if not isinstance(draft, str):
         errors = _append_error(errors, "draft 字段类型异常，Reviewer 已按空文本处理。")
         draft = ""
@@ -597,6 +610,8 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             draft=draft,
             retrieved_context=retrieved_context,
             revision_step=revision_step,
+            reasoning_contexts=reasoning_contexts,
+            reasoning_enabled=reasoning_enabled,
         )
     except Exception as exc:
         errors = _append_error(errors, f"Reviewer LLM 评审失败，已回退规则评审: {exc}")
