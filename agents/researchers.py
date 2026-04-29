@@ -36,6 +36,34 @@ def _append_error(errors: List[str], message: str) -> List[str]:
     return updated
 
 
+def _generate_reasoning_summary(
+    reasoning_chains: List[str],
+    reasoning_contexts: List[Dict[str, Any]],
+) -> str:
+    """生成推理链的结构化摘要，供Writer快速理解。"""
+    if not reasoning_chains:
+        return ""
+
+    summary_parts = [
+        "【IRCoT多跳推理链摘要】",
+        f"共 {len(reasoning_chains)} 跳推理，补充检索 {len(reasoning_contexts)} 条专属文档。",
+        "",
+        "推理过程：",
+    ]
+
+    for i, chain in enumerate(reasoning_chains, start=1):
+        preview = chain[:200].replace("\n", " ")
+        summary_parts.append(f"{i}. {preview}...")
+
+    summary_parts.append("")
+    summary_parts.append(
+        "注：推理链文档已独立保存，不受BGE筛选影响，"
+        "代表系统通过多跳推理主动发现的关键信息缺口。"
+    )
+
+    return "\n".join(summary_parts)
+
+
 def _build_queries(
     topic: str,
     critique_feedback: str,
@@ -512,6 +540,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     iter_enabled = os.getenv("ITERATIVE_RETRIEVAL_ENABLED", "1").strip() == "1"
     iterative_retrieval_summary: Dict[str, Any] = {"enabled": False}
     reasoning_chains: List[str] = list(state.get("reasoning_chains", []))
+    reasoning_contexts_raw: List[Dict[str, Any]] = []
+    reasoning_summary = ""
 
     if iter_enabled and normalized_contexts:
         try:
@@ -524,17 +554,37 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
                 gap_queries_per_hop=gap_queries_per_hop,
                 results_per_query=results_per_query,
             )
+
+            # 传入历史推理链（跨轮记忆）
+            prior_chains = list(reasoning_chains)
+
             gap_contexts, new_chains, hop_summaries = optimizer.run(
                 topic=topic,
                 contexts=normalized_contexts,
                 existing_queries=effective_queries,
+                prior_reasoning_chains=prior_chains,
             )
+
             contexts_before = len(normalized_contexts)
+
+            # 保存IRCoT原始文档到独立通道（不受BGE筛选影响）
             if gap_contexts:
+                reasoning_contexts_raw = list(gap_contexts)
+
+                # 仍然合并到normalized_contexts供BGE筛选（保持现有逻辑）
                 normalized_contexts = _dedupe_and_index_contexts(
                     list(normalized_contexts) + list(gap_contexts)
                 )
+
+            # 累积推理链（跨轮持久化）
             reasoning_chains = reasoning_chains + new_chains
+
+            # 生成推理链摘要（供Writer理解）
+            reasoning_summary = _generate_reasoning_summary(
+                reasoning_chains=reasoning_chains,
+                reasoning_contexts=reasoning_contexts_raw,
+            )
+
             iterative_retrieval_summary = {
                 "enabled": True,
                 "max_hops": max_hops,
@@ -542,6 +592,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
                 "contexts_before": contexts_before,
                 "contexts_after": len(normalized_contexts),
                 "gap_contexts_added": len(gap_contexts),
+                "reasoning_contexts_count": len(reasoning_contexts_raw),
                 "hop_summaries": hop_summaries,
             }
         except Exception as exc:
@@ -679,6 +730,9 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         "execution_trace": trace,
         "mab_state": updated_mab_state,
         "reasoning_chains": reasoning_chains,
+        "reasoning_contexts": reasoning_contexts_raw,
+        "reasoning_summary": reasoning_summary,
+        "reasoning_enabled": iter_enabled and bool(reasoning_chains),
         "iterative_retrieval_summary": iterative_retrieval_summary,
         "query_plan": query_plan,
     }

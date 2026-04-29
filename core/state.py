@@ -53,6 +53,12 @@ class ResearchState(ResearchStateCore, total=False):
     iterative_retrieval_summary: Dict[str, Any]
     # AQD 自适应查询分解：执行计划摘要（子问题列表、执行顺序、每题新增文档数）
     query_plan: Dict[str, Any]
+    # IRCoT 推理链专属文档池（不经BGE筛选，完整保留推理链补搜结果）
+    reasoning_contexts: List[Dict[str, Any]]
+    # IRCoT 推理链结构化摘要（供Writer快速理解推理过程）
+    reasoning_summary: str
+    # 标记本轮是否启用了IRCoT推理链
+    reasoning_enabled: bool
 
 
 def create_initial_state(
@@ -83,6 +89,9 @@ def create_initial_state(
         "reasoning_chains": [],
         "iterative_retrieval_summary": {},
         "query_plan": {},
+        "reasoning_contexts": [],
+        "reasoning_summary": "",
+        "reasoning_enabled": False,
     }
 
 

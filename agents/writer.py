@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 try:
     from core.state import ResearchState
@@ -117,6 +117,9 @@ def _generate_draft_with_llm(
     revision_directives: Dict[str, Any],
     previous_draft: str = "",
     eval_mode: bool = False,
+    reasoning_chains: Optional[List[str]] = None,
+    reasoning_contexts: Optional[List[Dict[str, Any]]] = None,
+    reasoning_summary: str = "",
 ) -> str:
     """调用 LLM 生成整篇草稿。"""
 
@@ -135,6 +138,9 @@ def _generate_draft_with_llm(
             retrieved_context=retrieved_context,
             revision_directives=revision_directives,
             previous_draft=previous_draft,
+            reasoning_chains=reasoning_chains,
+            reasoning_contexts=reasoning_contexts,
+            reasoning_summary=reasoning_summary,
         )
 
     response = llm.invoke(
@@ -158,6 +164,12 @@ def writer_node(state: ResearchState) -> Dict[str, Any]:
     critique_feedback = state.get("critique_feedback", "")
     retrieved_context = list(state.get("retrieved_context", []))
     revision_directives = dict(state.get("revision_directives", {}) or {})
+
+    # 读取推理链数据（双通道上下文系统）
+    reasoning_chains = list(state.get("reasoning_chains", []))
+    reasoning_contexts = list(state.get("reasoning_contexts", []))
+    reasoning_summary = state.get("reasoning_summary", "")
+    reasoning_enabled = state.get("reasoning_enabled", False)
 
     errors = list(state.get("errors", []))
 
@@ -234,6 +246,9 @@ def writer_node(state: ResearchState) -> Dict[str, Any]:
             revision_directives=revision_directives,
             previous_draft=_get_previous_draft(state),
             eval_mode=(state.get("output_mode") == "eval"),
+            reasoning_chains=reasoning_chains,
+            reasoning_contexts=reasoning_contexts,
+            reasoning_summary=reasoning_summary,
         )
         if not draft:
             draft = _fallback_draft(topic, revision_step, critique_feedback, retrieved_context)

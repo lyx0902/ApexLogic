@@ -36,13 +36,25 @@ WRITER_SYSTEM_PROMPT = """
    - 严格溯源：禁止使用“根据相关研究显示”这种模糊表述。必须在每一处引用或观点句末，使用方括号严格标注来源编号，如：“2023年该公司的总营收为45亿美元 [S1][S3]。”
    - 冲突处理：如果不同信源（如 [S1] 和 [S2]）的数据存在冲突，请客观并列双方数据，并指出差异所在，切勿主观臆断掩盖冲突。
    - 逻辑严谨：保持客观中立的学术口吻，论证需有理有据，避免绝对化表述。
-    
-2. 靶向迭代（针对有 Critique Feedback 的情况）：
+
+2. 推理链优先原则（IRCoT多跳推理结果）：
+   系统可能会提供【IRCoT推理链】，这是通过多跳链式推理主动发现的深度信息：
+   - 推理链代表系统对主题的深度理解路径，优先级高于普通检索结果
+   - 推理链中的结论已经过多轮验证，可直接作为报告的核心论据
+   - 推理链专属文档（标记为 [R1][R2]...）不受BGE筛选影响，代表关键信息缺口
+   - 在报告中引用推理链结论时，使用 [推理链N] 标记，并引用对应的专属文档 [RX]
+
+   【双通道引用规范】
+   - 普通检索结果：使用 [S1][S2]... 标记（经BGE筛选的top-10）
+   - 推理链专属文档：使用 [R1][R2]... 标记（IRCoT补搜，未经BGE筛选）
+   - 推理链结论：使用 [推理链N] 标记（N为推理跳数）
+
+3. 靶向迭代（针对有 Critique Feedback 的情况）：
    - 如果这是修改轮次，请**重点且精确地解决 Reviewer 提出的缺陷**。
    - 填补缺口：将新检索到的 Context 融入文中以解决信息缺失。
    - 纠正错误：如果 Reviewer 指出某处引用错误或事实偏差，请在此次重写中彻底修正。
 
-3. 结构化呈现：
+4. 结构化呈现：
    你的最终输出应为排版精美的 Markdown 报告。除非主题有特殊要求，否则建议包含：
    - 【核心结论/执行摘要】：开门见山地直接回答 <Topic> 提出的核心问题。
    - 【深度分析】：按逻辑分段，整合各方信源进行详细论述（必须带[SX] 引用）。
@@ -353,6 +365,9 @@ def build_writer_user_prompt(
     retrieved_context: List[Dict[str, Any] | str],
     revision_directives: Dict[str, Any] | None = None,
     previous_draft: str = "",
+    reasoning_chains: Optional[List[str]] = None,
+    reasoning_contexts: Optional[List[Dict[str, Any]]] = None,
+    reasoning_summary: str = "",
 ) -> str:
     """构建 Writer 生成/修订草稿提示，迭代时传入上一版草稿。"""
 
@@ -370,6 +385,29 @@ def build_writer_user_prompt(
         else:
             chunks.append(f"[S{idx}] {str(item)[:400]}")
     context_text = "\n\n".join(chunks)
+
+    # 构建推理链部分（双通道上下文系统）
+    reasoning_section = ""
+    if reasoning_chains and reasoning_contexts:
+        reasoning_section = "\n\n【IRCoT多跳推理链（优先级高于普通检索）】\n"
+        reasoning_section += reasoning_summary + "\n\n"
+
+        # 展示推理链文本
+        reasoning_section += "推理链详细内容：\n"
+        for i, chain in enumerate(reasoning_chains, start=1):
+            reasoning_section += f"\n[推理链{i}]\n{chain}\n"
+
+        # 展示推理链专属文档（使用R前缀）
+        reasoning_section += "\n\n推理链专属文档（标记为[R1][R2]...，未经BGE筛选）：\n"
+        r_chunks: List[str] = []
+        for idx, item in enumerate(reasoning_contexts[:15], start=1):  # 最多15条
+            if isinstance(item, dict):
+                title = (item.get("title", "") or "")[:100]
+                summary = (item.get("core_summary", "") or item.get("content", "") or "")[:300]
+                r_chunks.append(f"[R{idx}] {title}\n  {summary}")
+            else:
+                r_chunks.append(f"[R{idx}] {str(item)[:300]}")
+        reasoning_section += "\n\n".join(r_chunks)
 
     directives = revision_directives or {}
     must_fix = directives.get("must_fix", [])
@@ -408,7 +446,8 @@ def build_writer_user_prompt(
         f"{feedback_section}"
         f"{prev_draft_section}\n\n"
         f"【检索上下文（共 {len(chunks)} 条，所有引用必须来自此处）】\n"
-        f"{context_text}\n\n"
+        f"{context_text}"
+        f"{reasoning_section}\n\n"
         "输出完整 Markdown 报告，不要输出任何解释性前言或结尾说明。"
     )
 

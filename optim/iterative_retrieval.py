@@ -181,7 +181,7 @@ class IterativeRetrievalOptimizer:
 
     def __init__(
         self,
-        max_hops: int = 2,
+        max_hops: int = 4,
         gap_queries_per_hop: int = 2,
         results_per_query: int = 4,
     ) -> None:
@@ -199,8 +199,8 @@ class IterativeRetrievalOptimizer:
         api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
         if not api_key:
             return None
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
         try:
             return ChatOpenAI(
                 model=model,
@@ -343,14 +343,16 @@ class IterativeRetrievalOptimizer:
         topic: str,
         contexts: List[Dict[str, Any]],
         existing_queries: Optional[List[str]] = None,
+        prior_reasoning_chains: Optional[List[str]] = None,
     ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, Any]]]:
-        """执行迭代检索-推理循环（推理链驱动架构）。
+        """执行迭代检索-推理循环（推理链驱动架构，支持跨轮记忆）。
 
         参数
         ----
-        topic           : 研究主题
-        contexts        : 已归一化的初始上下文列表（含 core_summary 字段）
-        existing_queries: 已有查询，用于避免缺口查询与已有查询高度重叠
+        topic                 : 研究主题
+        contexts              : 已归一化的初始上下文列表（含 core_summary 字段）
+        existing_queries      : 已有查询，用于避免缺口查询与已有查询高度重叠
+        prior_reasoning_chains: 历史推理链（跨轮记忆，从上一轮的最后结论继续推理）
 
         返回
         ----
@@ -368,13 +370,27 @@ class IterativeRetrievalOptimizer:
 
         existing_set: set = set(q.lower() for q in (existing_queries or []))
         all_gap_contexts: List[Dict[str, Any]] = []
-        reasoning_chains: List[str] = []
+
+        # 恢复历史推理链（跨轮记忆）
+        reasoning_chains: List[str] = list(prior_reasoning_chains or [])
         hop_summaries: List[Dict[str, Any]] = []
+
+        # 如果有历史推理链，将最后一条作为本轮的起点
+        if reasoning_chains:
+            prior_reasoning = reasoning_chains[-1]  # 从上一轮的最后结论继续
+            # 记录历史推理链的延续
+            hop_summaries.append({
+                "hop": 0,
+                "status": "resumed_from_history",
+                "prior_chains_count": len(reasoning_chains),
+                "reasoning_preview": prior_reasoning[:150],
+            })
+        else:
+            prior_reasoning = ""
 
         # 首跳：智能选择最相关的初始文档
         initial_docs = self._select_initial_docs(topic, contexts, top_k=8)
         current_docs = initial_docs
-        prior_reasoning = ""
 
         for hop in range(self.max_hops):
             # 1. 生成推理链 + 缺口查询（基于当前文档 + 上一跳推理）
@@ -386,7 +402,7 @@ class IterativeRetrievalOptimizer:
                 prior_reasoning=prior_reasoning,
             )
 
-            # 2. 推理链逐步增长
+            # 2. 推理链逐步增长（增量追加新推理）
             if reasoning:
                 reasoning_chains.append(reasoning)
                 prior_reasoning = reasoning  # 下一跳将基于此推理继续
