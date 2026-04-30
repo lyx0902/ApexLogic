@@ -11,6 +11,7 @@ venv/
 
 # IDE
 .idea/
+.claude/
 
 # Test/cache artifacts
 .pytest_cache/
