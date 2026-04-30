@@ -1,231 +1,152 @@
 # ApexLogic Deep Research Multi-Agent
 
-基于 `LangGraph` 的深度研究多智能体系统，采用 `Researcher -> Writer -> Reviewer` 循环流程，支持 MAB 自适应检索预算、图扩展查询、BGE 语义精排、四维量化评审与多格式报告导出。
+基于 **LangGraph** 的深度研究多智能体系统。输入一个研究主题，系统自动调度三个 Agent 协作——**Researcher** 执行广搜与精筛、**Writer** 生成结构化草稿、**Reviewer** 四维量化评审——形成"检索→起草→评审→修订"闭环，直至质量达标或达到轮次上限。
 
-## 1. 项目目标
+相比标准 RAG 流水线，ApexLogic 在检索端叠加了四层优化（MAB 自适应预算 / 概念共现图扩展 / 自适应查询分解 / 交错链式推理补搜），写作端支持基于引用核查的定向修订，评审端输出可追踪的四维评分（事实准确性、逻辑完整性、信息覆盖广度、结论可执行性）。
 
-- 输入一个研究主题，自动完成检索、写作、评审与迭代修订。
-- 输出两类报告：`user`（面向读者）与 `debug`（可观测执行过程）。
-- 在 `both` 模式下额外导出 BGE 检索明细 JSON，便于离线分析召回与重排质量。
+## 工作流
 
-## 2. 当前架构（目录与职责）
+```
+START → Researcher → Writer → Reviewer ─┬─ 评审通过 ──→ END
+                      ↑                  ├─ 信息不足   ──→ Researcher（补充检索）
+                      └──────────────────┴─ 需修订     ──→ Writer（重写草稿）
+```
 
-- `core/state.py`：定义全局状态 `ResearchState` 与初始化函数。
-- `core/graph.py`：构建 `StateGraph`，配置节点与条件路由。
-- `agents/researchers.py`：检索代理，负责查询词生成、MAB 预算分配、广搜、去重、图扩展、BGE 两阶段筛选。
-- `agents/writer.py`：写作代理，基于上下文与评审反馈生成/修订草稿。
-- `agents/reviewer.py`：评审代理，四维量化打分（S1-S4），优先 LLM 评审，失败回退规则评审。
-- `bge/retriever.py`：向量召回（粗筛，默认 top20）。
-- `bge/reranker.py`：重排序（精排，默认 top10）。
-- `optim/mab_search.py`：Thompson Sampling MAB，自适应分配三路检索预算。
-- `optim/graph_expand.py`：图扩展查询，从已检索文档构建共现图，补搜核心概念方向。
-- `tools/search_tool.py`：DDG + Tavily 搜索封装。
-- `tools/arxiv_tool.py`：ArXiv 检索封装（含多轮回退查询策略）。
-- `prompts/system_prompts.py`：三类 Agent 的系统提示词与用户提示词构造。
-- `main.py`：命令行运行入口（打印核心状态与 trace）。
-- `export_report.py`：报告导出入口（`user/debug/both/user_only`）。
-- `tools/arxiv_synonyms.sample.json`：ArXiv 同义词词表示例。
+每轮迭代，Reviewer 给出加权总分（满分 10，默认 7.5 通过）及具体反馈：事实错误、逻辑漏洞、信息缺口。Writer 据此定向修订对应段落，或 Researcher 针对缺口补充检索。超过 `MAX_REVISIONS`（默认 4 轮）仍未通过则强制终止，输出当前最佳版本。
 
-## 3. 全流程链路说明
-
-一次完整请求按以下步骤执行：
-
-1. **初始化状态**
-   - 使用 `create_initial_state(topic, output_mode)` 创建初始状态。
-   - 关键字段包含：`topic`、`search_queries`、`retrieved_context`、`draft`、`review_result`、`execution_trace`、`errors`、`mab_state` 等。
-
-2. **Researcher 节点（检索与筛选）**
-   - 先生成基础查询词；如有 `critique_feedback` / `revision_directives`，会补充定向检索词。
-   - 若配置了 DeepSeek，优先做查询词重写（失败自动回退规则查询词）。
-   - **MAB 自适应预算**：根据各来源历史表现（Thompson Sampling），动态调整本轮三路检索配额（默认基础配额 DDG=35 / ArXiv=20 / Tavily=5）。
-   - 三路广搜结果统一去重、标准化。
-   - **图扩展查询**：从去重后的候选文档提取核心共现概念，生成补充查询，用 DDG 补搜后合并回候选池（通过环境变量 `GRAPH_EXPAND_QUERIES` 控制扩展条数，默认 2）。
-   - 进入 BGE 两阶段筛选：
-     - Retriever：top20
-     - Reranker：top10
-   - MAB 依据最终精排结果更新各来源的奖励参数，供下轮参考。
-   - 最终上下文写入 `retrieved_context`，并连续编号 `citation_id`（`S1...`）。
-
-3. **Writer 节点（生成/修订草稿）**
-   - 消费 `retrieved_context` 与 `critique_feedback`。
-   - 生成结构化研究草稿（摘要、背景、关键发现、风险局限、结论建议）。
-   - 迭代时基于 `revision_directives.must_fix` 做定向修订。
-   - 输出 `feedback_paragraph_mapping`（问题到段落映射）用于 debug 可追踪。
-
-4. **Reviewer 节点（四维量化评审）**
-   - 将 top-10 原始来源文本传给 LLM，逐条核查引用是否有真实依据。
-   - 四个评审维度：
-     - S1 事实准确性（权重 35%）
-     - S2 逻辑完整性（权重 25%）
-     - S3 信息覆盖广度（权重 25%）
-     - S4 结论可执行性（权重 15%）
-   - 加权总分 ≥ 8.0 视为通过（可通过 `REVIEWER_PASS_THRESHOLD` 调整）。
-   - 输出结构化 JSON：`scores`、`weighted_score`、`is_satisfactory`、`needs_more_research`、`fact_issues`、`logic_issues`、`info_gaps`、`citation_checks`、`supporter`、`skeptic`、`evidence_verdicts` 等。
-   - 如果模型输出不可解析，自动回退到规则评审，保证流程不中断。
-
-5. **条件路由与循环终止**
-   - `is_satisfactory=True` -> `END`
-   - 或 `revision_step >= MAX_REVISIONS` -> `END`
-   - 否则按 `next_route` 回到 `researcher` 或 `writer`。
-
-6. **导出阶段**
-   - `user`：正文 + 参考文献。
-   - `debug`：元信息 + 评审（四维评分表、引用核查、支持/质疑观点）+ 迭代历史 + 执行轨迹 + 错误记录 + MAB 预算分配记录 + 图扩展查询摘要。
-   - `both`：一次运行输出 `user/debug` 两份 Markdown，并额外输出 BGE 明细 JSON（含图扩展数据）。
-
-## 4. 安装与环境配置
-
-### 4.1 安装依赖
+## 快速开始
 
 ```bash
+# 1. 安装依赖
 pip install -r requirements.txt
+
+# 2. 配置 API Key
+cp .env.example .env
+# 编辑 .env，至少填写 DEEPSEEK_API_KEY、BGE_EMBED_API_KEY、BGE_RERANK_API_KEY
+
+# 3. 启动 Web UI（推荐）
+streamlit run app.py
+
+# 或命令行运行
+python main.py --topic "你的研究主题" --output-mode debug
 ```
 
-### 4.2 配置 `.env`
+## 核心特性
 
-复制 `.env.example` 为 `.env`，至少配置：
+**四层检索优化**，逐层作用于同一候选文档池，最后经 BGE 两阶段精筛选出 Top-10 高质量上下文：
 
-- `DEEPSEEK_API_KEY`
-- `BGE_EMBED_API_KEY`
-- `BGE_RERANK_API_KEY`
+- **Thompson Sampling MAB**：根据 DDG / ArXiv / Tavily 三路搜索源的历史表现，动态分配每轮检索预算，优质来源获得更多配额
+- **Graph Expand**：从已检索文档中提取核心概念，构建共现图（PageRank），生成扩展查询方向补搜
+- **AQD（自适应查询分解）**：LLM 将主题拆解为多个子问题，拓扑排序后逐子问题检索，覆盖不同切入角度
+- **IRCoT（交错链式推理补搜）**：LLM 多跳推理链识别信息缺口，针对缺口定向补搜，推理链跨迭代累积
 
-可选：
+**BGE 两阶段精筛**：Retriever（向量相似度粗筛 top-20）→ Reranker（交叉编码器精排 top-10）
 
-- `TAVILY_API_KEY`（建议配置，提升网页质量）
-- `DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com/v1`）
-- `DEEPSEEK_MODEL`（默认 `deepseek-chat`）
-- `MAX_REVISIONS`（默认 `3`）
-- `SEARCH_QUERY_BUDGET`（默认 `3`）
-- `DDG_TOTAL_RESULTS` / `ARXIV_TOTAL_RESULTS` / `TAVILY_TOTAL_RESULTS`（默认 `35/20/5`）
-- `BGE_RETRIEVER_TOP_K` / `BGE_RERANKER_TOP_K`（默认 `20/10`）
-- `GRAPH_EXPAND_QUERIES`（默认 `2`，设为 `0` 可关闭图扩展）
-- `REVIEWER_PASS_THRESHOLD`（默认 `8.0`）
-- `ARXIV_SYNONYM_FILE`（可选，同义词词典文件路径）
+**四维量化评审**：Reviewer 从事实准确性（35%）、逻辑完整性（25%）、信息覆盖广度（25%）、结论可执行性（15%）四个维度打分。S1 < 5 或 S3 < 4 时强制回到 Researcher 补充检索，不依赖总分判定。
 
-兼容变量：
+## 配置要点
 
-- 若未设置 `*_TOTAL_RESULTS`，会自动读取旧变量
-  `DDG_RESULTS_PER_QUERY` / `ARXIV_RESULTS_PER_QUERY` / `TAVILY_RESULTS_PER_QUERY`。
+`.env` 中必填的三个 Key：
 
-## 5. 常用运行命令
+| 变量 | 用途 |
+|---|---|
+| `DEEPSEEK_API_KEY` | LLM（查询重写/起草/评审/推理） |
+| `BGE_EMBED_API_KEY` | BGE 向量嵌入（粗筛） |
+| `BGE_RERANK_API_KEY` | BGE 重排序（精排） |
 
-### 5.1 终端运行（查看状态与 trace）
+常用可选配置：`MAX_REVISIONS`（最大迭代轮数，默认 4）、`REVIEWER_PASS_THRESHOLD`（通过阈值，默认 7.5/10）、`TAVILY_API_KEY`（启用 Tavily 搜索源）。所有优化层（Graph Expand / AQD / IRCoT）均可通过环境变量独立开关或调整参数，详见 `.env.example`。
+
+## 输出模式
+
+`export_report.py` 支持四种输出模式，一条命令切换：
 
 ```bash
-python main.py --topic "多智能体系统在科研自动化中的应用" --output-mode debug
+python export_report.py --topic "你的研究主题" --output-mode user/debug/both/user_only
 ```
 
-### 5.2 仅导出用户版
+| 模式 | 产物 |
+|---|---|
+| `user` | 干净的研究报告 + 参考文献 |
+| `debug` | 完整报告 + 四维评分详情 + 迭代历史 + 执行轨迹 + MAB/图扩展/AQD/IRCoT 各层摘要 |
+| `both` | 同时输出 user + debug 两份 Markdown + BGE 检索明细 JSON |
+| `user_only` | 内部运行完整流水线，仅导出用户侧 Markdown |
+
+输出文件落地 `reports/` 目录，文件名含时间戳。
+
+## Streamlit Web UI
+
+`streamlit run app.py` 启动可视化界面，整体信息架构如下：
+
+**侧边栏（参数配置）**
+- 研究主题输入、最大反思轮数滑块、通过阈值滑块
+- "开始深度研究"按钮触发执行
+- 历史记录列表：过往运行结果以 JSON 形式保存在 `appstats/` 目录，可随时回看
+
+**主区域（实时流式执行）**
+- 系统通过 LangGraph 的 `stream()` 模式逐节点推送状态，前端实时渲染而非等待全流程结束
+- 每个节点完成后展示对应面板，三个面板按执行顺序依次展开：
+
+1. **Researcher 面板**：展示本轮检索词、MAB 三路预算分配、去重统计、AQD 子问题分解详情（含每个子问题补搜到的文档链接）、IRCoT 逐跳推理链与 gap 查询。若跨轮次推理，会标注哪些推理链是本轮新增、哪些继承自历史轮次
+2. **Writer 面板**：分离展示 DeepSeek 的 `<think>` 内部思维链与正文草稿，草稿预览前 600 字
+3. **Reviewer 面板**：四维评分仪表盘（每维得分 + 加权总分与阈值的差值）、评审意见文字反馈、结构化修订指令、下一跳路由决策（输出最终报告 / 补充检索 / 修订草稿）
+
+**最终输出区**
+- 完整研究报告（正文中的 `[S1]` `[R1]` 等引用自动转为可点击超链接）
+- 一键下载 Markdown 报告
+- BGE Reranker 精选的 Top-10 参考资料列表
+- IRCoT 推理链专属参考文献（独立于 BGE pipeline，不经过 BGE 筛选，确保推理发现的关键信息不丢失）
+
+**历史记录浏览**
+- 过往运行结果完整回放：最终报告、迭代快照、每轮思维链、四维评分，展示逻辑与直播执行完全一致
+
+## 常用命令
+
+### 研究报告导出
 
 ```bash
-python export_report.py --topic "RISC-C和RISC-V架构的异同点" --output-mode user
+# 一条命令，--output-mode 切换 user / debug / both / user_only
+python export_report.py --topic "多智能体系统中的反思机制" --output-mode both
 ```
 
-### 5.3 仅导出调试版
+### 批量评测（HotpotQA / Bamboogle）
+
+评测 ApexLogic 自身流水线在多跳问答数据集上的表现，支持并发与 LLM 语义判定：
 
 ```bash
-python export_report.py --topic "RISC-C和RISC-V架构的异同点" --output-mode debug
+# HotpotQA hard 难度，限制 50 题，LLM 语义判定，4 线程并发
+python eval_runner.py --dataset hotpotqa --difficulty hard --limit 50 --scorer llm --concurrency 4
+
+# Bamboogle 全量，Exact Match 模式
+python eval_runner.py --dataset bamboogle --scorer em
 ```
 
-### 5.4 一次运行导出 user + debug + BGE JSON（推荐）
+结果 JSON 默认输出到 `tests/` 目录，文件命名含数据集、难度、时间戳。评测脚本与 `main.py`/`export_report.py` 完全独立，不依赖 Streamlit。
+
+### 商业模型基线评测
+
+绕过 ApexLogic 流水线，直接调商业模型 API 作答，用于横向对比：
 
 ```bash
-python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode both --output reports/oppo-vs-iphone.md
+# Qwen / Doubao 基线，HotpotQA hard 难度
+python eval_baselines.py --provider qwen --dataset hotpotqa --level hard --limit 50 --scorer llm
+python eval_baselines.py --provider doubao --dataset hotpotqa --level hard --limit 50 --scorer llm
 ```
 
-将生成：
+需要预先在 `.env` 中配置 `QWEN_API_KEY` 或 `DOUBAO_API_KEY` + `DOUBAO_ENDPOINT_ID`。
 
-- `reports/oppo-vs-iphone-user.md`
-- `reports/oppo-vs-iphone-debug.md`
-- `reports/oppo-vs-iphone-bge-details.json`
-
-### 5.5 仅对外导出 user（内部仍跑完整链路）
-
-```bash
-python export_report.py --topic "OPPO FIND X8 ULTRA和iPhone17 pro max的性能对比" --output-mode user_only --output reports/oppo-vs-iphone-user.md
-```
-
-### 5.6 统计评测耗时（按题目 id 聚合）
+### 评测耗时统计
 
 ```bash
 python -u evals/elapsed_stats.py --input tests/results_hotpotqa_20260411_172430.json
 ```
 
-命令行会输出：`total_rows`、`valid_rows`、`unique_ids`、`overall_avg`。
+输出 `total_rows`、`valid_rows`、`unique_ids`、`overall_avg` 等统计。
 
-## 6. 输出文件说明
+## 容错策略
 
-### 6.1 `*-user.md`
+系统遵循"降级不中断"原则——LLM 不可用时回退规则生成，BGE 服务异常时跳过不截断候选集，Reviewer 输出非法 JSON 时规则评审器接管，任意优化层异常只记录错误日志不中断主流程。
 
-- 面向最终读者。
-- 包含研究正文与参考文献。
+## 安全提示
 
-### 6.2 `*-debug.md`
-
-- 面向调试与评估，包含以下各节：
-  1. 运行元信息（迭代轮次、评审模式、BGE 统计）
-  2. 评审结果（四维评分表、综合反馈、事实/逻辑问题、引用核查、支持与质疑观点）
-  3. 每轮草稿与评审历史
-  4. 参考上下文摘录
-  5. 执行轨迹
-  6. 错误与降级记录
-  7. MAB 自适应检索预算（各来源 α/β 参数、逐轮预算对比）
-  8. 图扩展查询（扩展查询列表、新增文档数、合并后总数）
-
-### 6.3 `*-bge-details.json`（仅 `both` 模式）
-
-- 包含本轮检索过程的结构化明细：
-  - 广搜配额统计（targets/attempted/fetched）
-  - MAB 本轮预算分配与历史参数
-  - 图扩展查询及对应检索到的原始文档（`graph_expand.extra_contexts`）
-  - Retriever 记录（selected/dropped）
-  - Reranker 记录（selected/dropped）
-  - 每条记录含 `query/url/title/score/reason/timestamp` 等字段
-
-## 7. ArXiv 检索机制（通用增强版）
-
-`tools/arxiv_tool.py` 采用通用多轮回退查询，避免中文或混合 query 直接 0 命中：
-
-1. 原始 query
-2. token 精简 query
-3. 中英通用意图词同义词扩展 query
-4. 英文 token-only query
-
-可选外部词库：
-
-- 设置 `ARXIV_SYNONYM_FILE=/path/to/your_synonyms.json`
-- 可参考 `tools/arxiv_synonyms.sample.json`
-
-## 8. 容错与降级策略
-
-- 任一外部 API 调用失败，错误会记录到 `errors`，流程尽量继续。
-- 未配置 LLM Key 时，Writer/Reviewer 启用本地回退逻辑，保证图可运行。
-- Reviewer 输出非 JSON 时，会做解析修复与规则化兜底，避免链路中断。
-- 广搜三路配额若都被配置成 0，会自动回退默认配额。
-- `networkx` 未安装或候选文档为空时，图扩展模块静默跳过，不影响主流程。
-
-## 9. 调试建议
-
-- 先看 `debug` 报告中的：
-  - `BGE Provider 统计`
-  - `BGE Retriever/Reranker` 输入输出条数
-  - `MAB 自适应检索预算` 各来源期望奖励趋势
-  - `图扩展查询` 是否生成了有效补充方向
-  - `错误与降级记录`
-- 再看 `*-bge-details.json`：
-  - 检查 `selected_records` 是否主题相关
-  - 对比 `dropped_records` 与 `selected_records` 的分数分布
-  - 查看 `graph_expand.extra_contexts` 评估图扩展文档质量
-
-## 10. 快速自检
-
-```bash
-python main.py --topic "多智能体系统中的反思机制与自我优化" --output-mode debug
-python export_report.py --topic "评测agent性能的几种常见benchmark概述与比较" --output-mode both --output reports/smoke.md
-```
-
-## 11. 安全提示
-
-- 不要把真实密钥提交到仓库。
-- `.env.example` 只放占位值。
-- 建议将报告与日志输出目录纳入版本管理策略（如按需 `.gitignore`）。
+- 不要把真实 API Key 提交到仓库，`.env` 已在 `.gitignore` 中
+- `.env.example` 只放占位值
