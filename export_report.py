@@ -14,12 +14,23 @@ from core.graph import compile_graph
 from core.state import ResearchState, create_initial_state
 
 
-def _inject_citation_hyperlinks(text: str, contexts: List[Dict]) -> str:
-    """将正文中的 [Sn] 替换为 Markdown 超链接 [[Sn]](url)。
-    若该 citation_id 无对应 URL，则原样保留 [Sn] 不变。
+def _inject_citation_hyperlinks(
+    text: str,
+    contexts: List[Dict],
+    reasoning_contexts: List[Dict] | None = None,
+) -> str:
+    """将正文中的 [Sn] / [Rn] 替换为 Markdown 超链接 [[Sn]](url)。
+    若该 citation_id 无对应 URL，则原样保留。
     """
     url_map: Dict[str, str] = {}
     for item in contexts:
+        if isinstance(item, dict):
+            cid = item.get("citation_id", "")
+            url = (item.get("url", "") or "").strip()
+            if cid and url:
+                url_map[cid] = url
+
+    for item in (reasoning_contexts or []):
         if isinstance(item, dict):
             cid = item.get("citation_id", "")
             url = (item.get("url", "") or "").strip()
@@ -36,7 +47,7 @@ def _inject_citation_hyperlinks(text: str, contexts: List[Dict]) -> str:
             return f"[[{cid}]]({url})"
         return m.group(0)
 
-    return re.sub(r'\[(S\d+)\]', replace_match, text)
+    return re.sub(r'\[([SR]\d+)\]', replace_match, text)
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,11 +101,17 @@ def _render_markdown_user(state: ResearchState) -> str:
     topic = state.get("topic", "")
     report = state.get("final_report", "") or state.get("draft", "") or ""
     contexts = state.get("retrieved_context", []) or []
-    report = _inject_citation_hyperlinks(report, contexts)
+    reasoning_contexts = state.get("reasoning_contexts", []) or []
+    report = _inject_citation_hyperlinks(report, contexts, reasoning_contexts)
     lines: List[str] = [f"# 深度研究报告：{topic}", "", report if report else "(未生成正文)"]
 
     lines.append("")
     lines.append("## 参考文献")
+    lines.append("")
+
+    # BGE 筛选来源
+    lines.append("")
+    lines.append("### BGE 检索来源（Top-10）")
     lines.append("")
     for item in contexts[:12]:
         if not isinstance(item, dict):
@@ -108,6 +125,22 @@ def _render_markdown_user(state: ResearchState) -> str:
             lines.append(f"  - {url}")
     if not any(isinstance(x, dict) for x in contexts[:12]):
         lines.append("- 无")
+
+    # IRCoT 推理链来源
+    if reasoning_contexts:
+        lines.append("")
+        lines.append("### IRCoT 推理链来源")
+        lines.append("")
+        for item in reasoning_contexts[:15]:
+            if not isinstance(item, dict):
+                continue
+            citation_id = item.get("citation_id", "-")
+            title = item.get("title", "")
+            url = item.get("url", "")
+            lines.append(f"- [{citation_id}] {title}")
+            if url:
+                lines.append(f"  - {url}")
+
     return "\n".join(lines)
 
 
@@ -118,10 +151,11 @@ def _render_markdown_debug(state: ResearchState) -> str:
     report = state.get("final_report", "") or state.get("draft", "") or ""
     review = state.get("review_result", {}) or {}
     contexts = state.get("retrieved_context", []) or []
+    reasoning_contexts = state.get("reasoning_contexts", []) or []
     trace = state.get("execution_trace", []) or []
     errors = state.get("errors", []) or []
     history = state.get("iteration_history", []) or []
-    report = _inject_citation_hyperlinks(report, contexts)
+    report = _inject_citation_hyperlinks(report, contexts, reasoning_contexts)
     quality_summary = state.get("source_quality_summary", {}) or {}
     bge_summary = quality_summary.get("bge_summary", {}) or {}
 
@@ -354,6 +388,9 @@ def _render_markdown_debug(state: ResearchState) -> str:
 
     lines.append("## 4. 参考上下文摘录")
     lines.append("")
+
+    lines.append("### 4.1 BGE 检索来源（Top-10）")
+    lines.append("")
     for item in contexts[:12]:
         if isinstance(item, dict):
             citation_id = item.get("citation_id", "-")
@@ -367,6 +404,20 @@ def _render_markdown_debug(state: ResearchState) -> str:
             lines.append(f"- {str(item)[:260]}")
     if not contexts:
         lines.append("- 无")
+
+    if reasoning_contexts:
+        lines.append("")
+        lines.append("### 4.2 IRCoT 推理链来源")
+        lines.append("")
+        for item in reasoning_contexts[:15]:
+            if not isinstance(item, dict):
+                continue
+            citation_id = item.get("citation_id", "-")
+            title = item.get("title", "")
+            url = item.get("url", "")
+            lines.append(f"- [{citation_id}] {title}")
+            if url:
+                lines.append(f"  - url: {url}")
     lines.append("")
 
     lines.append("## 5. 执行轨迹")

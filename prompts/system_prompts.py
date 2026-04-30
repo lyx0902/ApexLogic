@@ -33,7 +33,7 @@ WRITER_SYSTEM_PROMPT = """
 
 1. 事实与引用铁律（最高优先级）：
    - 零幻觉：报告中的每一个数据、日期、核心主张，**必须绝对来源于提供的 <Context>**。若 Context 中未提及，必须明确声明“目前检索到的资料暂未提及”，绝不可动用自身预训练知识进行脑补或捏造。
-   - 严格溯源：禁止使用“根据相关研究显示”这种模糊表述。必须在每一处引用或观点句末，使用方括号严格标注来源编号，如：“2023年该公司的总营收为45亿美元 [S1][S3]。”
+   - 严格溯源：禁止使用”根据相关研究显示”这种模糊表述。必须在每一处引用或观点句末，使用方括号严格标注来源编号，如：”2023年该公司的总营收为45亿美元 [S1][S3]。” 若引用推理链专属文档，使用 [R1][R2] 标注。
    - 冲突处理：如果不同信源（如 [S1] 和 [S2]）的数据存在冲突，请客观并列双方数据，并指出差异所在，切勿主观臆断掩盖冲突。
    - 逻辑严谨：保持客观中立的学术口吻，论证需有理有据，避免绝对化表述。
 
@@ -441,13 +441,15 @@ def build_writer_user_prompt(
             reasoning_section += f"\n[推理链{i}]\n{chain}\n"
 
         # 展示推理链专属文档（使用R前缀）
-        reasoning_section += "\n\n推理链专属文档（标记为[R1][R2]...，未经BGE筛选）：\n"
+        reasoning_section += "\n\n推理链专属文档（标记为[R1][R2]...，未经BGE筛选，每条含URL供引用）：\n"
         r_chunks: List[str] = []
         for idx, item in enumerate(reasoning_contexts[:15], start=1):  # 最多15条
             if isinstance(item, dict):
                 title = (item.get("title", "") or "")[:100]
+                url = (item.get("url", "") or "").strip()
                 summary = (item.get("core_summary", "") or item.get("content", "") or "")[:300]
-                r_chunks.append(f"[R{idx}] {title}\n  {summary}")
+                url_line = f"\n  URL: {url}" if url else ""
+                r_chunks.append(f"[R{idx}] {title}{url_line}\n  {summary}")
             else:
                 r_chunks.append(f"[R{idx}] {str(item)[:300]}")
         reasoning_section += "\n\n".join(r_chunks)

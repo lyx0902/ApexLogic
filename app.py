@@ -225,6 +225,23 @@ def save_run_to_history(
             }
             for ctx in contexts
         ],
+        "reasoning_references": [
+            {
+                "citation_id": ctx.get("citation_id", "") if isinstance(ctx, dict) else "",
+                "title": ctx.get("title", "") if isinstance(ctx, dict) else str(ctx),
+                "url": (
+                    str(ctx.get("url", "") or "").strip()
+                    if isinstance(ctx, dict)
+                    else ""
+                ),
+                "summary": (
+                    (ctx.get("core_summary", "") or ctx.get("content", ""))[:200]
+                    if isinstance(ctx, dict)
+                    else ""
+                ),
+            }
+            for ctx in final_state.get("reasoning_contexts", [])[:15]
+        ],
         "errors_count": len(final_state.get("errors", [])),
         "errors": final_state.get("errors", [])[:10],
         "run_metadata": {
@@ -313,7 +330,11 @@ def show_history_view(data: dict) -> None:
     report = data.get("final_report", "")
     if report:
         _, clean = extract_think(report)
-        clean = _inject_citation_hyperlinks(clean, data.get("references", []))
+        clean = _inject_citation_hyperlinks(
+            clean,
+            data.get("references", []),
+            data.get("reasoning_references", []),
+        )
         st.markdown(clean)
         safe_t = re.sub(r"[^\w\u4e00-\u9fff]", "_", data["topic"])[:20]
         st.download_button(
@@ -1156,7 +1177,11 @@ final_draft: str = final_state.get("final_report") or final_state.get("draft", "
 
 if final_draft:
     _, clean_report = extract_think(final_draft)
-    clean_report = _inject_citation_hyperlinks(clean_report, final_state.get("retrieved_context", []))
+    clean_report = _inject_citation_hyperlinks(
+        clean_report,
+        final_state.get("retrieved_context", []),
+        final_state.get("reasoning_contexts", []),
+    )
     st.markdown(clean_report)
 
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")

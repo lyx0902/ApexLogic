@@ -376,6 +376,7 @@ class IterativeRetrievalOptimizer:
 
         # 恢复历史推理链（跨轮记忆）
         reasoning_chains: List[str] = list(prior_reasoning_chains or [])
+        existing_chain_count = len(reasoning_chains)
         hop_summaries: List[Dict[str, Any]] = []
 
         # 如果有历史推理链，将最后一条作为本轮的起点
@@ -508,4 +509,5 @@ class IterativeRetrievalOptimizer:
                 # 最终总结失败不影响主流程
                 pass
 
-        return all_gap_contexts, reasoning_chains, hop_summaries
+        new_chains = reasoning_chains[existing_chain_count:]
+        return all_gap_contexts, new_chains, hop_summaries

@@ -258,7 +258,10 @@ def _extract_core_summary(title: str, content: str) -> str:
     return summary[:420]
 
 
-def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dict[str, Any]]:
+def _dedupe_and_index_contexts(
+    contexts: List[Dict[str, Any] | str],
+    citation_prefix: str = "S",
+) -> List[Dict[str, Any]]:
     """按 url 或 title+source 去重，并生成连续 citation_id。"""
 
     unique: List[Dict[str, Any]] = []
@@ -280,7 +283,7 @@ def _dedupe_and_index_contexts(contexts: List[Dict[str, Any] | str]) -> List[Dic
         unique.append(normalized)
 
     for idx, item in enumerate(unique, start=1):
-        item["citation_id"] = f"S{idx}"
+        item["citation_id"] = f"{citation_prefix}{idx}"
 
     return unique
 
@@ -567,9 +570,11 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
             contexts_before = len(normalized_contexts)
 
-            # 保存IRCoT原始文档到独立通道（不受BGE筛选影响）
+            # 保存IRCoT文档到独立通道（归一化+R前缀，不受BGE筛选影响）
             if gap_contexts:
-                reasoning_contexts_raw = list(gap_contexts)
+                reasoning_contexts_raw = _dedupe_and_index_contexts(
+                    list(gap_contexts), citation_prefix="R"
+                )
 
                 # 仍然合并到normalized_contexts供BGE筛选（保持现有逻辑）
                 normalized_contexts = _dedupe_and_index_contexts(
