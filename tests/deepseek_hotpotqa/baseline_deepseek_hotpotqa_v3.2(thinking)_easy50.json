@@ -1,0 +1,514 @@
+{
+  "meta": {
+    "provider": "doubao",
+    "dataset": "hotpotqa",
+    "level": "easy",
+    "skip": 0,
+    "total": 50,
+    "correct": 31,
+    "accuracy": 0.62,
+    "total_elapsed_seconds": 288.64
+  },
+  "results": [
+    {
+      "id": 0,
+      "question": "Who was once considered the best kick boxer in the world, however he has been involved in a number of controversies relating to his \"unsportsmanlike conducts\" in the sport and crimes of violence outside of the ring.",
+      "ground_truth": "Badr Hari",
+      "raw_draft": "根据您提供的描述，这位人物最符合的是前K-1冠军、荷兰裔泰拳及踢拳传奇人物 **“完美先生” 彼得·阿兹**。\n\n以下是详细的推理过程和相关信息：\n\n### 核心匹配点\n\n1.  **“曾被认为是世界上最好的踢拳手”**：\n    *   彼得·阿兹在1990年代中后期统治了K-1 GP赛场，分别在1994、1995和1998年三次夺得K-1 World GP总冠军，这一成就至今无人超越。\n    *   他以其标志性的“阿兹式高扫腿”闻名，摧毁性极强，被公认为那个时代最具统治力的重量级踢拳手之一，“完美先生”的绰号正是对其巅峰时期实力的肯定。\n\n2.  **“涉及多项与‘不体育道德行为’相关的争议”**：\n    *   阿兹在赛场上以脾气火爆、行为出格著称。最著名的事件发生在**2000年K-1 World GP决赛**中，他对阵厄恩斯特·胡斯特。在比赛临近结束时，阿兹因一个争议性的击倒被判负。他对此判决极度不满，**当场拒绝与对手握手，并愤怒地踢翻了裁判的桌子**，这一行为被全球直播，成为K-1历史上最著名的“不体育道德”场景之一。\n    *   他在比赛中也常有挑衅、侮辱对手和裁判的行为，这与“完美先生”的赛场形象形成了巨大反差。\n\n3.  **“涉及赛场外的暴力犯罪”**：\n    *   阿兹的私人生活充满法律纠纷和暴力指控。他曾多次因袭击、斗殴等罪名被警方逮捕和起诉。\n    *   其中最严重的事件之一是**2012年**，他因在阿姆斯特丹一家夜总会外**严重袭击他人致其昏迷**而被判有罪，最终被判处**18个月监禁**（其中6个月缓刑）。\n    *   此外，他还曾卷入家庭纠纷、威胁他人等案件，其暴力形象从擂台延伸至场外，严重损害了他的公众声誉。\n\n### 结论\n\n综合以上三点——**巅峰时期的绝对统治力（“最佳”）、赛场内多次恶劣的不当行为、以及赛场外确凿的暴力犯罪记录**——可以确定您描述的人物正是 **彼得·阿兹**。\n\n他是一位将极致的格斗天赋与极具争议的个人品行集于一身的复杂人物，在踢拳历史上既是传奇冠军，也是一个典型的反面案例。",
+      "final_answer": "Peter Aerts",
+      "cot_reasoning": "The report identifies the person as 彼得·阿兹, which is Peter Aerts in English. He fits all criteria: best kickboxer, unsportsmanlike conduct, and violent",
+      "is_correct": false,
+      "elapsed_seconds": 35.21
+    },
+    {
+      "id": 1,
+      "question": "In which American football game was Malcolm Smith named Most Valuable player?",
+      "ground_truth": "Super Bowl XLVIII",
+      "raw_draft": "Malcolm Smith was named the **Most Valuable Player (MVP)** of **Super Bowl XLVIII**, which took place on February 2, 2014.  \n\nIn that game, his team, the **Seattle Seahawks**, defeated the **Denver Broncos** by a score of **43–8**. Smith, a linebacker, had a key performance that included a **69-yard interception return for a touchdown** and a **fumble recovery**, contributing significantly to the Seahawks' dominant victory.",
+      "final_answer": "Super Bowl XLVIII",
+      "cot_reasoning": "The report states Malcolm Smith was MVP of Super Bowl XLVIII.",
+      "is_correct": true,
+      "elapsed_seconds": 17.66
+    },
+    {
+      "id": 2,
+      "question": "What are the names of the current members of  American heavy metal band who wrote the music for  Hurt Locker The Musical? ",
+      "ground_truth": "Hetfield and Ulrich, longtime lead guitarist Kirk Hammett, and bassist Robert Trujillo.",
+      "raw_draft": "好的，作为深度研究助手，我将通过多跳检索来回答这个问题。这个问题可以分解为几个关键步骤：\n\n1.  **第一跳：确认“Hurt Locker The Musical”及其音乐创作者。**\n    *   我需要先确认是否存在一部名为“Hurt Locker The Musical”的作品，以及是哪位或哪个乐队为其创作了音乐。\n\n2.  **第二跳：识别创作音乐的美国重金属乐队。**\n    *   在找到音乐创作者后，我需要核实它是否是一个美国重金属乐队。\n\n3.  **第三跳：找出该乐队目前的成员名单。**\n    *   最后，我需要获取该乐队最新的、准确的成员构成信息。\n\n现在，我将开始联网搜索。\n\n**搜索过程：**\n\n*   **搜索词 1：** `\"Hurt Locker The Musical\" music by`\n*   **搜索结果摘要：** 搜索结果显示，“Hurt Locker: The Musical”并非一部真实存在的百老汇或主流音乐剧。它实际上是一个**网络爆红梗**或**讽刺性概念**，起源于社交媒体（特别是TikTok和Twitter）。这个概念将2008年的战争电影《拆弹部队》（*The Hurt Locker*）虚构改编成一部音乐剧。在梗的传播中，经常被提及为该“音乐剧”创作音乐的是美国重金属乐队 **“动感小子”**。\n\n*   **搜索词 2：** `\"Hurt Locker The Musical\" \"动感小子\" or \"Hurt Locker musical\" \"动感小子\"`\n*   **搜索结果摘要：** 大量来源（包括Know Your Meme、TikTok合集、娱乐新闻网站）证实了这个关联。这个梗在2023年末至2024年初流行，网友们戏称动感小子乐队为这部虚构音乐剧创作了“激昂的摇滚配乐”。因此，虽然音乐剧本身是虚构的，但被广泛指定为其“作曲家”的乐队是明确且唯一的。\n\n*   **搜索词 3：** `动感小子 current members 2024`\n*   **搜索结果摘要：** 根据乐队官方网站、维基百科和近期音乐新闻，动感小子乐队目前的固定成员是**科里·泰勒**和**肖恩·克拉汉**。科里·泰勒是主唱、吉他手、键盘手，也是乐队的核心词曲作者。肖恩·克拉汉是鼓手和打击乐手。他们两人是自乐队1995年成立以来唯一不变的成员，并负责乐队所有专辑的创作和录制。在巡演时，他们会雇佣现场伴奏乐手（如贝斯手、节奏吉他手），但这些现场乐手不被视为乐队的官方正式成员。\n\n**推理过程：**\n\n1.  **问题解析：** 用户的问题基于一个网络迷因——“Hurt Locker: The Musical”。这个迷因的核心笑点之一，就是指定了一支风格反差极大的著名乐队（动感小子）来为其创作音乐。\n2.  **事实确认：** 通过搜索，我确认了“Hurt Locker: The Musical”是虚构的，但与之关联的乐队“动感小子”是真实存在的，并且是美国著名的重金属/另类金属乐队。\n3.  **成员核实：** 动感小子乐队以其精简的固定成员结构而闻名。在录音室和创作层面，乐队只有两位官方成员。所有权威音乐资料库和乐队官方信息都证实了这一点。\n4.  **结论整合：** 因此，对于“为《Hurt Locker: The Musical》创作音乐的美国重金属乐队”的当前成员问题，答案应指向动感小子乐队的两位固定成员。\n\n**最终结论：**\n\n根据网络迷因“Hurt Locker: The Musical”的设定，为其创作音乐的美国重金属乐队是 **动感小子**。\n\n动感小子乐队目前的正式成员有且仅有两位：\n1.  **科里·泰勒** - 主唱、吉他、键盘、词曲创作核心。\n2.  **肖恩·克拉汉** - 鼓手、打击乐。\n\n需要注意的是，乐队在现场演出时会与额外的巡演乐手合作，但上述两位是乐队自成立以来唯一且不变的官方成员，负责所有音乐创作。",
+      "final_answer": "好的，作为深度研究助手，我将通过多跳检索来回答这个问题。这个问题可以分解为几个关键步骤：",
+      "cot_reasoning": "[降级：从草稿首段提取，LLM 不可用]",
+      "is_correct": false,
+      "elapsed_seconds": 52.95
+    },
+    {
+      "id": 3,
+      "question": "Dua Lipa, an English singer, songwriter and model, the album spawned the number-one single \"New Rules\" is a song by English singer Dua Lipa from her eponymous debut studio album, released in what year?",
+      "ground_truth": "2017",
+      "raw_draft": "根据联网搜索结果，Dua Lipa 的同名首张录音室专辑《Dua Lipa》于 **2017年** 发行。专辑中的歌曲 **\"New Rules\"** 作为单曲发行后，在全球多国排行榜上取得了巨大成功，并成为了她的标志性热单。\n\n**推理过程：**\n1. 问题核心是确认收录了冠军单曲 **\"New Rules\"** 的杜阿·利帕同名首张专辑的发行年份。\n2. 通过搜索确认，杜阿·利帕的首张专辑《Dua Lipa》于 **2017年6月2日** 由华纳音乐发行。\n3. 单曲 **\"New Rules\"** 于 **2017年7月** 作为专辑的第五支单曲发行，并在随后登上了英国单曲榜榜首。\n\n**结论：**\n因此，收录了冠军单曲 **\"New Rules\"** 的杜阿·利帕同名首张录音室专辑《Dua Lipa》是在 **2017年** 发行的。",
+      "final_answer": "2017",
+      "cot_reasoning": "The report states Dua Lipa's debut album was released in 2017.",
+      "is_correct": true,
+      "elapsed_seconds": 21.43
+    },
+    {
+      "id": 4,
+      "question": "American politician Joe Heck ran unsuccessfully against Democrat Catherine Cortez Masto, a woman who previously served as the 32nd Attorney General of where?",
+      "ground_truth": "Nevada",
+      "raw_draft": "Joe Heck ran unsuccessfully against Democrat **Catherine Cortez Masto**, who previously served as the **32nd Attorney General of Nevada**. Cortez Masto served as Nevada's Attorney General from 2007 to 2015. In the 2016 U.S. Senate election, she successfully ran for the seat being vacated by Harry Reid, defeating Republican Joe Heck.",
+      "final_answer": "Nevada",
+      "cot_reasoning": "The report states Catherine Cortez Masto served as the 32nd Attorney General of Nevada.",
+      "is_correct": true,
+      "elapsed_seconds": 16.17
+    },
+    {
+      "id": 5,
+      "question": "Which  American politician did Donahue replaced ",
+      "ground_truth": "Kelli Ward",
+      "raw_draft": "根据搜索结果，**菲尔·多诺霍（Phil Donahue）** 取代的是美国政治家 **约瑟夫·P. 肯尼迪二世（Joseph P. Kennedy II）**。\n\n**详细情况如下：**\n\n1.  **背景**：约瑟夫·P. 肯尼迪二世是马萨诸塞州第八国会选区的美国众议员，他是前司法部长罗伯特·F·肯尼迪的长子，也是著名的肯尼迪政治家族成员。\n2.  **事件**：1998年，肯尼迪二世决定不再寻求连任，从而空出了他在国会的席位。\n3.  **取代者**：在随后的选举中，**菲尔·多诺霍**作为民主党候选人赢得了这个席位，成功接替肯尼迪二世，成为马萨诸塞州第八选区的联邦众议员。多诺霍于1999年1月3日正式就职。\n\n**总结**：因此，菲尔·多诺霍在国会中取代的正是约瑟夫·P. 肯尼迪二世。",
+      "final_answer": "Joseph P. Kennedy II",
+      "cot_reasoning": "The report states that Phil Donahue replaced Joseph P. Kennedy II as a U.S. Representative.",
+      "is_correct": false,
+      "elapsed_seconds": 21.05
+    },
+    {
+      "id": 6,
+      "question": "New Faces of 1952 is a musical revue with songs and comedy skits, it helped jump start the career of which young performer, and American actress?",
+      "ground_truth": "Carol Lawrence",
+      "raw_draft": "**联网搜索中...**  \n\n**第一步：确认《New Faces of 1952》的基本信息**  \n我首先搜索了“New Faces of 1952 musical revue cast”。  \n资料显示：《New Faces of 1952》是一部在百老汇上演的音乐剧，由一群新人表演，其中包括多位后来成名的艺人。  \n\n**第二步：查找主要演员名单**  \n根据搜索结果，该剧的演员包括：  \n- 保罗·林德（Paul Lynde）  \n- 艾丽丝·戈斯特利（Alice Ghostley）  \n- 罗伯特·克拉里（Robert Clary）  \n- 弗吉尼亚·德·卢西（Virginia de Luce）  \n- 以及一位当时非常年轻的表演者，后来成为著名演员和歌手。  \n\n**第三步：识别题目中提到的“年轻表演者，美国女演员”**  \n在进一步搜索“New Faces of 1952 launched career of actress”时，发现一个重要名字：**Eartha Kitt**。  \n但Eartha Kitt 在1952年时已经有一定演出经历，不过《New Faces of 1952》确实让她在百老汇获得广泛关注。  \n\n然而，题目中“young performer, and American actress”可能指的是另一位更年轻、当时刚起步的女演员。  \n继续查阅资料发现，**卡罗尔·劳伦斯（Carol Lawrence）** 也在此剧中首次登台百老汇，她后来以《西区故事》成名。  \n\n但更明确的记录显示，**Eartha Kitt** 正是凭借此剧中的歌曲《Monotonous》一举成名，她既是歌手也是演员，符合“young performer, and American actress”的描述（虽然她后来以歌手和舞者更为知名）。  \n\n**第四步：交叉验证**  \n我再次搜索“New Faces of 1952 Eartha Kitt”确认。  \n资料显示：Eartha Kitt 在《New Faces of 1952》中表演了《Monotonous》和《Bal Petit Bal》，这是她职业生涯的突破点。她当时25岁，符合“young performer”的描述，并且她确实也是一位美国女演员（尽管她以多重表演身份闻名）。  \n\n**结论**  \n虽然该剧推出了多位新人，但最符合“jump start the career of a young performer and American actress”这一描述的，是 **Eartha Kitt**。  \n\n**最终答案：Eartha Kitt**",
+      "final_answer": "Eartha Kitt",
+      "cot_reasoning": "The report identifies Eartha Kitt as the young performer and American actress whose career was jump-started by New Faces of 1952.",
+      "is_correct": false,
+      "elapsed_seconds": 38.4
+    },
+    {
+      "id": 7,
+      "question": "750 7th Avenue and 101 Park Avenue, are located in which city?",
+      "ground_truth": "New York City",
+      "raw_draft": "好的，我们先来逐步推理一下。  \n\n---\n\n**1. 理解问题**  \n题目给出了两个地址：  \n- 750 7th Avenue  \n- 101 Park Avenue  \n需要确定它们位于哪个城市。  \n\n---\n\n**2. 初步分析**  \n这两个地址都是典型的纽约曼哈顿的地址格式。  \n- 7th Avenue（第七大道）在纽约曼哈顿是一条南北向的主干道。  \n- Park Avenue（公园大道）也是曼哈顿一条重要的南北向大道。  \n在纽约市，地址通常以“大道”和“街”来定位，并且数字地址（如 750 7th Ave）在曼哈顿很常见。  \n\n---\n\n**3. 联网搜索验证**  \n我搜索了“750 7th Avenue”和“101 Park Avenue”来确认具体位置。  \n\n- **750 7th Avenue, New York, NY**  \n  这是纽约市曼哈顿的一座著名摩天大楼，原名“AXA 中心”，位于 7th Avenue 与 49th Street 交界处，靠近时代广场。城市是纽约市（曼哈顿区）。  \n\n- **101 Park Avenue, New York, NY**  \n  这是位于 Park Avenue 与 41st Street 交界处的一座办公楼，也在曼哈顿。  \n\n两个地址的搜索结果都显示城市为 **New York, NY**。  \n\n---\n\n**4. 结论**  \n这两个地址都位于 **美国纽约市曼哈顿**。  \n\n---\n\n**最终答案：**  \n**纽约市（曼哈顿）**",
+      "final_answer": "New York City",
+      "cot_reasoning": "Both addresses are in Manhattan, New York City.",
+      "is_correct": true,
+      "elapsed_seconds": 24.74
+    },
+    {
+      "id": 8,
+      "question": "Which actress played the part of fictitious character Kimberly Ann Hart, in the franchise built around a live action superhero television series taking much of its footage from the Japanese tokusatsu 'Super Sentai'?",
+      "ground_truth": "Amy Jo Johnson",
+      "raw_draft": "**推理过程：**\n\n1. **理解问题核心**：问题询问的是在改编自日本“超级战队”（Super Sentai）系列的美式真人超级英雄电视剧中，饰演虚构角色 **Kimberly Ann Hart** 的女演员。\n\n2. **确定作品系列**：  \n   - 美国改编自“超级战队”的真人电视剧系列是 **《恐龙战队》（Mighty Morphin Power Rangers）**，该系列始于1993年，大量使用了日本《恐龙战队》（Zyuranger）等系列的特摄片段。  \n   - Kimberly Ann Hart 是该系列初代《恐龙战队》中的 **粉衣战士（Pink Ranger）**。\n\n3. **搜索演员信息**：  \n   - 通过联网检索确认，在《恐龙战队》中饰演 Kimberly Ann Hart 的女演员是 **Amy Jo Johnson**（生于1970年10月6日）。  \n   - 她于1993年至1995年在《恐龙战队》剧集中饰演该角色，并出演了1995年的电影版。\n\n4. **验证信息准确性**：  \n   - 交叉核对多个来源（如 IMDb、官方资料等），确认 Amy Jo Johnson 是唯一在初代《恐龙战队》剧集中长期饰演 Kimberly 的演员。  \n   - 后续虽有其他演员在重启或特别演出中饰演过该角色，但问题明确指向“franchise built around”该系列，通常指原始系列。\n\n**最终结论**：  \n饰演 Kimberly Ann Hart 的女演员是 **Amy Jo Johnson**。",
+      "final_answer": "Amy Jo Johnson",
+      "cot_reasoning": "The report identifies the franchise as Mighty Morphin Power Rangers and the actress as Amy Jo Johnson.",
+      "is_correct": true,
+      "elapsed_seconds": 27.91
+    },
+    {
+      "id": 9,
+      "question": "The Royal Commission into Drug Trafficking (1977–1979) or Woodward Royal Commission was a royal commission initiated by the New South Wales Government to investigate drug trafficking in New South Wales, Australia, especially links between the New South Wales Police and Mafia, The Honoured Society, is a Calabrian 'Ndrangheta criminal confederation, started in Melbourne and currently active in all of which country?  ",
+      "ground_truth": "Australia",
+      "raw_draft": "根据我的检索结果，**The Honoured Society** 是一个起源于意大利南部**卡拉布里亚**地区的犯罪组织，属于 'Ndrangheta（光荣会）的一部分。\n\n虽然您的问题中提到它“started in Melbourne”，但这通常指的是该组织在**澳大利亚**的扩展和活动。'Ndrangheta 是全球性的犯罪集团，其核心和起源地在意大利。\n\n**推理过程：**\n1.  **问题解析**：您的问题核心是询问“The Honoured Society”这个组织目前在哪个国家活跃。\n2.  **关键信息确认**：\n    *   “Calabrian 'Ndrangheta”明确指出了该组织的民族和犯罪联盟归属——来自意大利卡拉布里亚的 'Ndrangheta。\n    *   “started in Melbourne”指的是该组织在澳大利亚墨尔本建立了分支或开始了其在海外的犯罪活动。\n    *   “currently active in all of which country?” 是问题的直接提问。\n3.  **事实核查与整合**：\n    *   根据历史记录和犯罪学研究，'Ndrangheta（光荣会）是意大利三大黑手党组织之一，根基在卡拉布里亚。\n    *   “The Honoured Society”是 'Ndrangheta 在澳大利亚，特别是墨尔本地区使用的历史名称或别名之一，用于指代其海外分支。\n    *   该组织在澳大利亚已有数十年的历史，渗透进社会和经济领域，目前仍然在澳大利亚全境活跃。\n\n**最终结论：**\n尽管“The Honoured Society”这个名称特指其在澳大利亚的分支，并且始于墨尔本，但作为 'Ndrangheta 的一部分，它是一个**跨国犯罪组织**。根据您问题的语境（询问其当前活跃的国家），以及该组织在澳大利亚持续存在并活动的事实，答案是：\n\n**澳大利亚**。\n\n同时需要补充说明，其母体和主要活动范围始终包括**意大利**。",
+      "final_answer": "Australia",
+      "cot_reasoning": "The report states that The Honoured Society, a branch of the 'Ndrangheta, started in Melbourne and is currently active across Australia.",
+      "is_correct": true,
+      "elapsed_seconds": 31.36
+    },
+    {
+      "id": 10,
+      "question": "The 337th Flight Test Squadron (337 FLTS) was most recently part of the 46th Test Wing and based at McClellan Air Force Base, a former United States Air Force base located in the North Highlands area of Sacramento County, in which US state?",
+      "ground_truth": "California",
+      "raw_draft": "The 337th Flight Test Squadron (337 FLTS) was based at **McClellan Air Force Base**.  \n\nMcClellan Air Force Base was located in the **North Highlands area of Sacramento County**, which is in the state of **California**, United States.  \n\n**Final answer: California** ✅",
+      "final_answer": "California",
+      "cot_reasoning": "The report states McClellan Air Force Base is in California.",
+      "is_correct": true,
+      "elapsed_seconds": 15.71
+    },
+    {
+      "id": 11,
+      "question": "Which faith is designated to the University of Providence, private university accredited by the NW association of Schools and Colleges and located in a third largest city in Montana after being passed by Missoula? ",
+      "ground_truth": "Roman Catholic",
+      "raw_draft": "好的，我们先一步步推理并联网搜索来解答这个问题。  \n\n---\n\n**1. 理解问题**  \n问题问的是：  \n- 有一所大学叫 **University of Providence**  \n- 它是私立大学，被 **NW association of Schools and Colleges**（即西北高校委员会，NWCCU）认证  \n- 位于 **蒙大拿州第三大城市**（在人口上被 Missoula 超过，所以不是第一、第二）  \n- 问这所大学被指定属于哪个 **faith**（宗教教派）  \n\n所以我们需要确定：  \n1. 蒙大拿州城市人口排名  \n2. University of Providence 在哪个城市  \n3. 这所大学的宗教背景  \n\n---\n\n**2. 搜索蒙大拿州城市人口排名**  \n我联网搜索一下。  \n\n根据最新数据（2020 年之后）：  \n蒙大拿州人口前三的城市通常是：  \n1. **Billings**（最大）  \n2. **Missoula**（第二大）  \n3. **Great Falls**（第三大）  \n\n题目说“located in a third largest city in Montana after being passed by Missoula”，意思是该城市曾是第二大，但后来被 Missoula 超过，变成第三大。这符合 **Great Falls** 的历史情况（大约 1970 年代后 Missoula 人口超过 Great Falls）。  \n\n所以大学应该在 **Great Falls**。  \n\n---\n\n**3. 搜索 University of Providence 信息**  \n我搜索 “University of Providence Great Falls religious affiliation”。  \n\n结果显示：  \nUniversity of Providence 原名 **University of Great Falls**，2017 年更名为 **University of Providence**。  \n它是由 **Providence Health & Services** 背后的 **Sisters of Providence**（天意姐妹会）创建的，这是一个 **罗马天主教** 的修女团体。  \n\n因此它的宗教归属是 **Roman Catholic**（天主教）。  \n\n---\n\n**4. 确认认证和类型**  \n它确实是 NWCCU 认证的私立天主教大学。  \n\n---\n\n**最终答案**：  \n**Roman Catholic (Catholic)**  \n\n---\n\n**推理过程总结**：  \n1. 确定蒙大拿州第三大城市是 Great Falls（Billings 第一，Missoula 第二）。  \n2. 找到位于 Great Falls 的 University of Providence。  \n3. 查证其历史与创建者，发现由天主教的天意姐妹会创建，属于罗马天主教。  \n4. 因此 faith designated 是 **Catholic**。",
+      "final_answer": "Roman Catholic",
+      "cot_reasoning": "The report identifies the University of Providence's religious affiliation as Roman Catholic, founded by the Sisters of Providence.",
+      "is_correct": true,
+      "elapsed_seconds": 32.45
+    },
+    {
+      "id": 12,
+      "question": "Don Barry Mason was the founder of the Psychedelic Shamanistic Institute (PSI), which other member that's Welsh, that died on 10 April 2016?",
+      "ground_truth": "Dennis Howard Marks",
+      "raw_draft": "Based on my search results, the other Welsh member of the Psychedelic Shamanistic Institute (PSI) who died on 10 April 2016 was **Gareth Hughes**.\n\nHere is the reasoning process:\n\n1.  **Identifying the PSI Founder:** The search results confirm that Don Barry Mason was the founder of the Psychedelic Shamanistic Institute (PSI).\n2.  **Finding the Welsh Member:** The search results explicitly state that Gareth Hughes was a \"Welsh member\" of the PSI.\n3.  **Confirming the Date of Death:** Multiple sources list Gareth Hughes's date of death as 10 April 2016. He is described as a \"Welsh musician and artist\" and a \"key member\" of the PSI.\n\n**Conclusion:** The Welsh member of the Psychedelic Shamanistic Institute (PSI) who died on 10 April 2016 was **Gareth Hughes**.",
+      "final_answer": "Gareth Hughes",
+      "cot_reasoning": "The report states Gareth Hughes is the Welsh member who died on 10 April 2016.",
+      "is_correct": false,
+      "elapsed_seconds": 18.36
+    },
+    {
+      "id": 13,
+      "question": "What male actor starred in The Messenger?",
+      "ground_truth": "Robert Sheehan",
+      "raw_draft": "The actor **Ben Foster** starred in the 2009 war drama film *The Messenger*. He played the lead role of **Staff Sergeant Will Montgomery**, a soldier who is assigned to the Army's Casualty Notification service.\n\n**Final Answer: Ben Foster**",
+      "final_answer": "Ben Foster",
+      "cot_reasoning": "The report explicitly states Ben Foster starred in The Messenger.",
+      "is_correct": false,
+      "elapsed_seconds": 19.48
+    },
+    {
+      "id": 14,
+      "question": "In what show did Cynthia Nixon receive the 2004 Primetime Emmy Award for Outstanding Supporting Actress in a Comedy Series and a Screen Actors Guild Award for her performance?",
+      "ground_truth": "Sex and the City",
+      "raw_draft": "Cynthia Nixon received the **2004 Primetime Emmy Award for Outstanding Supporting Actress in a Comedy Series** and a **Screen Actors Guild Award** for her performance in the HBO series **\"Sex and the City.\"**\n\n**Reasoning Process:**\n\n1. **Identify the Awards and Year:** The question specifies the 2004 Primetime Emmy Award for Outstanding Supporting Actress in a Comedy Series and a Screen Actors Guild Award.\n\n2. **Confirm Cynthia Nixon's Award History:** A quick check of Cynthia Nixon's major awards shows that in 2004, she won both the Primetime Emmy and the Screen Actors Guild Award (Outstanding Performance by a Female Actor in a Comedy Series) for her role.\n\n3. **Link Awards to the Show:** These awards were for her performance as **Miranda Hobbes** on the HBO series **\"Sex and the City.\"** The show aired from 1998 to 2004, and Nixon's character was a central part of the ensemble.\n\n**Conclusion:** The show is **\"Sex and the City.\"**",
+      "final_answer": "Sex and the City",
+      "cot_reasoning": "The report directly states she received both awards for her performance in HBO's \"Sex and the City.\"",
+      "is_correct": true,
+      "elapsed_seconds": 20.52
+    },
+    {
+      "id": 15,
+      "question": "The 1895/96 Football League season was the eighth in Football League history with Everton, their Goodison Park home, is a football stadium located in Walton, Liverpool, in which country?",
+      "ground_truth": "England",
+      "raw_draft": "好的，我们先一步步推理。  \n\n1. 题目提到“1895/96 Football League season”是英格兰足球联赛的第八个赛季，这确定了联赛是**英格兰**的联赛。  \n2. 题目说“Everton, their Goodison Park home, is a football stadium located in Walton, Liverpool”，即古迪逊公园球场位于利物浦的沃尔顿地区。  \n3. 利物浦是英格兰西北部的一个城市，属于**英国**（United Kingdom）。  \n\n因此，题目问“in which country?”，答案应该是 **England**（或者 United Kingdom）。考虑到足球语境中常直接说国家名，并且利物浦在英格兰，所以最终答案是 **England**。  \n\n**最终答案：England**（英国/英格兰）。",
+      "final_answer": "England",
+      "cot_reasoning": "The report identifies Liverpool as being in England, which is the country where Goodison Park is located.",
+      "is_correct": true,
+      "elapsed_seconds": 23.79
+    },
+    {
+      "id": 16,
+      "question": "Roger Avary (born August 23, 1965) is a Canadian film and television producer, screenwriter and director in the American mass media industry, he wrote the screenplay for Beowulf, a 2007 British-American 3D motion capture epic fantasy film, directed by who?",
+      "ground_truth": "Robert Zemeckis",
+      "raw_draft": "Roger Avary wrote the screenplay for **Beowulf (2007)**, which was directed by **Robert Zemeckis**.",
+      "final_answer": "Robert Zemeckis",
+      "cot_reasoning": "The research report explicitly states that Beowulf (2007) was directed by Robert Zemeckis.",
+      "is_correct": true,
+      "elapsed_seconds": 13.98
+    },
+    {
+      "id": 17,
+      "question": "\"Funnybot\" is the second episode of the fifteenth season of which American animated television series, created by Trey Parker and Matt Stone?  ",
+      "ground_truth": "South Park",
+      "raw_draft": "**推理过程：**  \n\n1. 题目提到“Funnybot”是某美国动画剧集第15季的第2集，且该剧由 **Trey Parker 和 Matt Stone** 创作。  \n2. 根据常识，Trey Parker 和 Matt Stone 共同创作的著名美国动画剧集是 **《南方公园》（South Park）**。  \n3. 通过联网检索核实：  \n   - 《南方公园》第15季于2011年播出。  \n   - 该季第2集标题正是 **“Funnybot”**，于2011年4月27日首播。  \n   - 剧情涉及机器人“Funnybot”在喜剧奖颁奖典礼上引发混乱，符合该剧讽刺风格。  \n\n**结论：**  \n“Funnybot”是《南方公园》（South Park）第15季的第2集。",
+      "final_answer": "South Park",
+      "cot_reasoning": "The research report identifies the series as South Park, created by Trey Parker and Matt Stone.",
+      "is_correct": true,
+      "elapsed_seconds": 19.36
+    },
+    {
+      "id": 18,
+      "question": "Which private research university is located in Chestnut Hill, Massachusetts Boston College or Stanford University? ",
+      "ground_truth": "Boston College",
+      "raw_draft": "根据联网搜索结果，**位于马萨诸塞州栗树山（Chestnut Hill, Massachusetts）的私立研究型大学是波士顿学院（Boston College）**。\n\n**推理过程如下：**\n\n1.  **地理位置确认**：\n    *   通过搜索，确认波士顿学院的主校区位于马萨诸塞州波士顿的**栗树山社区**。\n    *   斯坦福大学（Stanford University）则位于美国加利福尼亚州的**斯坦福**，与马萨诸塞州相距甚远。\n\n2.  **大学性质确认**：\n    *   波士顿学院是一所成立于1863年的私立耶稣会研究型大学。\n    *   斯坦福大学也是一所私立研究型大学，但地理位置完全不同。\n\n**结论**：题目中描述的地理位置与**波士顿学院**完全匹配，与斯坦福大学无关。因此，正确答案是 **Boston College（波士顿学院）**。",
+      "final_answer": "Boston College",
+      "cot_reasoning": "The report clearly states that Boston College is located in Chestnut Hill, Massachusetts, while Stanford University is in California. Therefore, the a",
+      "is_correct": true,
+      "elapsed_seconds": 19.99
+    },
+    {
+      "id": 19,
+      "question": "What American stage, film, and television actor  who also appeared in a large number of musicals, played Samson in the 1949 film \"Samson and Delilah\".",
+      "ground_truth": "Victor John Mature",
+      "raw_draft": "The actor you're referring to is **Victor Mature**.\n\nHere’s a breakdown of why he fits the description:\n\n*   **American stage, film, and television actor:** Victor Mature was a prominent American actor whose career spanned from the 1930s to the 1980s.\n*   **Appeared in a large number of musicals:** While best known for his roles in historical epics and film noir, Mature began his career on Broadway and starred in several film musicals early on, such as *My Gal Sal* (1942) and *Million Dollar Mermaid* (1952).\n*   **Played Samson in the 1949 film \"Samson and Delilah\":** This is his most definitive connection. He starred as the biblical strongman Samson in Cecil B. DeMille's 1949 epic *Samson and Delilah*, opposite Hedy Lamarr as Delilah.\n\n**Therefore, the actor is Victor Mature.**",
+      "final_answer": "Victor Mature",
+      "cot_reasoning": "The report directly identifies Victor Mature as the actor who fits the description and played Samson in \"Samson and Delilah\".",
+      "is_correct": true,
+      "elapsed_seconds": 22.58
+    },
+    {
+      "id": 20,
+      "question": "Iqaluit Airport and Canadian North are based out of what country?",
+      "ground_truth": "Canada",
+      "raw_draft": "Iqaluit Airport is located in **Canada**, specifically in Iqaluit, the capital of the territory of Nunavut.  \nCanadian North is an airline also based in **Canada**, with its headquarters in Calgary, Alberta.  \n\n**Answer:** Both are based in **Canada**.",
+      "final_answer": "Canada",
+      "cot_reasoning": "Both entities are explicitly stated to be based in Canada in the report.",
+      "is_correct": true,
+      "elapsed_seconds": 16.48
+    },
+    {
+      "id": 21,
+      "question": "Still Da Baddest is the fourth studio album by American rapper Trina, following the poor chart performance, \"I Got a Thang for You\" featuring which American singer/songwriter, record producer, business woman, and television personality, and was born in Oakland, California?",
+      "ground_truth": "Keyshia Cole",
+      "raw_draft": "好的，我们先一步步推理。  \n\n**第一步：确定专辑信息**  \n“Still Da Baddest” 是 Trina 的第四张录音室专辑，于 2008 年发行。  \n\n**第二步：找到歌曲信息**  \n题目说：  \n> 在专辑《Still Da Baddest》之前，有一首单曲成绩不佳（poor chart performance），歌名是 “I Got a Thang for You”，这首歌 featuring 了一位美国歌手/词曲作者、唱片制作人、女商人、电视名人，并且她出生在加利福尼亚州奥克兰。  \n\n**第三步：搜索确认歌曲信息**  \n我通过联网搜索确认：  \n“I Got a Thang for You” 是 Trina 在 2010 年发行的单曲（收录在专辑《Amazin’》中，不是《Still Da Baddest》）。但题目说 “following the poor chart performance, ‘I Got a Thang for You’ featuring which...”，意思是 “在《Still Da Baddest》之后，有一首成绩不佳的单曲 ‘I Got a Thang for You’，这首歌 featuring 了谁？”  \n不过仔细看句子结构，也可能是 “《Still Da Baddest》是在某首成绩不佳的单曲 ‘I Got a Thang for You’ 之后发行的，这首歌 featuring 了谁？” 但这样时间线不对，因为《Still Da Baddest》是 2008 年，“I Got a Thang for You” 是 2010 年，所以应该是 “《Still Da Baddest》之后，有一首成绩不佳的单曲叫 ‘I Got a Thang for You’，这首歌 featuring 了谁？”  \n\n**第四步：确定合作艺人**  \n根据搜索结果，“I Got a Thang for You” 的合作艺人是 **Keyshia Cole**。  \n\n**第五步：核对 Keyshia Cole 是否符合描述**  \nKeyshia Cole：  \n- 美国歌手、词曲作者  \n- 唱片制作人（参与制作自己的专辑）  \n- 女商人（有自己的品牌等）  \n- 电视名人（有真人秀《Keyshia Cole: The Way It Is》等）  \n- 出生于加利福尼亚州奥克兰  \n\n完全符合题目描述。  \n\n**结论**：  \n这位合作艺人是 **Keyshia Cole**。  \n\n**最终答案**：  \nKeyshia Cole",
+      "final_answer": "Keyshia Cole",
+      "cot_reasoning": "The report identifies the featured artist as Keyshia Cole, who matches the description.",
+      "is_correct": false,
+      "elapsed_seconds": 38.24
+    },
+    {
+      "id": 22,
+      "question": "what is the connection between Peter O'Meara and Norman Dike?",
+      "ground_truth": "Band of Brothers",
+      "raw_draft": "**Peter O'Meara** and **Norman Dike** are connected through their service in the **U.S. Army's 101st Airborne Division** during **World War II**, specifically in the **506th Parachute Infantry Regiment (PIR)**. Their connection is most prominently featured in the **HBO miniseries *Band of Brothers***, which dramatized the history of \"Easy Company\" (Company E, 506th PIR).\n\nHere is a breakdown of their connection:\n\n### 1. **Norman Dike**\n*   **Rank & Role:** **Captain** (later Major). He served as the **commander of Easy Company** for a significant period during the war, from the aftermath of the Battle of the Bulge (succeeding the wounded 1st Lt. Thomas Meehan) until he was relieved of command during the intense fighting in the woods near **Foy, Belgium**, in January 1945.\n*   **Reputation:** Dike is a controversial figure in Easy Company's history. Portrayed in *Band of Brothers* as aloof, often absent from the front lines, and indecisive under pressure (\"**Foxhole Norman**\"), his leadership was widely criticized by the men of Easy Company. His perceived failure during the assault on Foy led to his being replaced on the battlefield by the much more respected **1st Lt. Ronald Speirs**.\n*   **Real-Life Context:** Some historians and veterans have noted that Dike may have been given an unfairly harsh portrayal. He was wounded by shrapnel during the Foy assault (a detail omitted in the series), and he later received a Bronze Star and a Purple Heart. He had a successful post-war career as a diplomat.\n\n### 2. **Peter O'Meara**\n*   **Rank & Role:** **Lieutenant** (later Captain). He served as a **platoon leader within Easy Company**.\n*   **Connection to Dike:** O'Meara was one of the junior officers serving **under Captain Dike's command**. In the *Band of Brothers* episode \"**The Breaking Point**\" (Episode 7), which focuses on the Battle of the Bulge and the assault on Foy, **Lt. Peter O'Meara is portrayed as being present during Dike's controversial command**.\n*   **Key Dramatic Moment:** In the series, during the chaotic and stalled attack on Foy, **1st Lt. Richard Winters** (the battalion executive officer observing from a distance) famously shouts over the radio, **\"Get up! Get your men moving! Get Dike out of the way and get O'Meara up there!\"** This line underscores the leadership crisis, with Winters seeing O'Meara as a potential alternative to take initiative. Shortly after this, Ronald Speirs arrives and takes command.\n\n### Summary of the Connection:\n*   **Historical/Military Connection:** They were both officers in **Easy Company, 506th PIR, 101st Airborne Division**. **Norman Dike was the company commander, and Peter O'Meara was one of his subordinate platoon leaders.**\n*   **Cultural/Pop Culture Connection:** Their relationship, and specifically the crisis of leadership during the attack on Foy, is a **central dramatic event in the *Band of Brothers* miniseries**. The line from Winters calling for O'Meara to replace Dike is one of the most memorable moments highlighting Dike's failed leadership in the narrative.\n\n**Conclusion:** The primary connection between Peter O'Meara and Norman Dike is that of a **subordinate officer and his company commander** during a critical and poorly executed battle in WWII, a relationship immortalized and dramatized for its tension and consequences in the acclaimed series *Band of Brothers*.",
+      "final_answer": "**Peter O'Meara** and **Norman Dike** are connected through their service in the **U.S. Army's 101st",
+      "cot_reasoning": "[降级：从草稿首段提取，LLM 不可用]",
+      "is_correct": false,
+      "elapsed_seconds": 50.47
+    },
+    {
+      "id": 23,
+      "question": "South Korean actor Kim Yool-ho starred in what 2016 movie directed by Yeon Sang-ho Yeon Sang-ho and starring actors Gong Yoo, Jung Yu-mi, and Ma Dong-seok?",
+      "ground_truth": "Train to Busan",
+      "raw_draft": "根据搜索结果，韩国演员**金侑（Kim Yool-ho）** 参演的、由**延尚昊（Yeon Sang-ho）** 执导，并由**孔刘（Gong Yoo）**、**郑有美（Jung Yu-mi）** 和**马东锡（Ma Dong-seok）** 主演的2016年电影是 **《釜山行》（부산행 / Train to Busan）**。\n\n**推理过程：**\n1.  **确认核心信息**：用户问题中包含了几个关键要素：导演是延尚昊（Yeon Sang-ho），主演是孔刘、郑有美、马东锡，年份是2016年。\n2.  **搜索验证**：通过搜索，可以确认完全符合以上所有条件的电影正是《釜山行》。该片是2016年上映的韩国丧尸题材灾难片，由延尚昊执导，孔刘、郑有美、马东锡领衔主演。\n3.  **确认演员**：进一步搜索演员“金侑（Kim Yool-ho）”的参演作品，可以确认他在《釜山行》中饰演了角色。他在片中扮演了**棒球少年队成员**之一，是主要角色“英国”（영국，由崔宇植饰演）的队友，在列车上与丧尸搏斗并最终幸存下来。\n\n**最终结论：**\n金侑（Kim Yool-ho）在2016年参演的电影是 **《釜山行》（Train to Busan）**。",
+      "final_answer": "Train to Busan",
+      "cot_reasoning": "The report identifies the movie as Train to Busan (부산행), matching all given criteria.",
+      "is_correct": true,
+      "elapsed_seconds": 24.84
+    },
+    {
+      "id": 24,
+      "question": "Which industry do Richard Hawley and Chicago's Catherine belong to? ",
+      "ground_truth": "rock band",
+      "raw_draft": "**Richard Hawley** and **Chicago's Catherine** belong to the **music industry**, specifically within the **independent/alternative rock and singer-songwriter** scenes.  \n\n---\n\n**1. Richard Hawley**  \n- **Background**: He is a British singer-songwriter, guitarist, and producer from Sheffield, England.  \n- **Career**: Originally a member of the Britpop band **Longpigs** in the 1990s, he later worked as a touring guitarist for **Pulp** (led by Jarvis Cocker). Since the early 2000s, he has built a successful solo career known for his lush, retro-inspired rock, crooning vocals, and atmospheric guitar work.  \n- **Genre**: His music blends rock, balladry, rockabilly, and sometimes orchestral pop, often described as \"alternative rock\" or \"Americana-tinged indie.\"  \n\n**2. Chicago's Catherine**  \n- **Background**: This refers to the indie rock band **Catherine**, formed in Chicago in the early 1990s.  \n- **Career**: They were active mainly in the 1990s, releasing albums on independent labels like **Minty Fresh** and **Sony/Work**. They are known for melodic, sometimes dream-pop or jangle-rock sounds, with a touch of Midwestern alternative rock.  \n- **Genre**: Indie rock/alternative rock, with some power-pop influences.  \n\n---\n\n**Conclusion**:  \nBoth are part of the **music industry**, operating primarily in the **alternative/indie rock** domain. Richard Hawley is a solo artist from the UK, while Catherine was a band from the US indie scene.",
+      "final_answer": "music industry",
+      "cot_reasoning": "The report states that both Richard Hawley and Chicago's Catherine belong to the music industry.",
+      "is_correct": false,
+      "elapsed_seconds": 26.29
+    },
+    {
+      "id": 25,
+      "question": "The Swedish-British entertainment studio executive and film executive producer, who was the Executive producer for a 2016 American action thriller film directed by Babak Najafi, currently serve?",
+      "ground_truth": "CEO of Lionsgate UK & Europe",
+      "raw_draft": "好的，我们先一步步推理这个问题。  \n\n---\n\n**1. 理解问题**  \n- 题目提到一位“瑞典-英国娱乐工作室高管和电影执行制片人”。  \n- 此人曾担任 **2016 年美国动作惊悚片** 的执行制片人，该片由 **Babak Najafi** 执导。  \n- 问题问的是此人 **目前担任什么职务**。  \n\n---\n\n**2. 确定电影**  \nBabak Najafi 在 2016 年执导的美国动作惊悚片是 **《伦敦陷落》（London Has Fallen）**，这是 2013 年《奥林匹斯的陷落》的续集，主演杰拉德·巴特勒。  \n该片确实有多位执行制片人，包括原系列制片人、电影公司高层等。  \n\n---\n\n**3. 查找该片的执行制片人名单**  \n根据 IMDb 等资料，《伦敦陷落》的执行制片人包括：  \n- Gerard Butler  \n- Alan Siegel  \n- Mark Gill  \n- John Thompson  \n- Matt O'Toole  \n- Christine Otal  \n- **John Friedberg**  \n\n---\n\n**4. 确定“瑞典-英国娱乐工作室高管”是谁**  \n在以上名单中，符合“瑞典-英国娱乐工作室高管”身份的是 **John Friedberg**。  \n他是瑞典出生的英国电影制片人，曾是 **“Embassy of Imagination”** 和 **“Pioneer Pictures”** 等公司的高管，长期在伦敦和洛杉矶从事电影融资与制片。  \n\n---\n\n**5. 查询 John Friedberg 目前的职务**  \n根据最新资料（2023–2024），John Friedberg 目前担任 **“STXfilms”** 的国际总裁兼制片负责人。STXfilms 是美国电影制片与发行公司 STX Entertainment 的旗下部门，他负责国际电影融资、制作和发行策略。  \n\n---\n\n**最终结论**  \n> 这位瑞典-英国娱乐工作室高管、电影执行制片人（John Friedberg）目前担任 **STXfilms 的国际总裁兼制片负责人**。  \n\n**推理过程总结**：  \n1. 确定电影是《伦敦陷落》（导演 Babak Najafi，2016）。  \n2. 查找该片执行制片人名单。  \n3. 从中识别出符合“瑞典-英国”背景的高管 John Friedberg。  \n4. 检索其最新职业动态，确认其现任职务。",
+      "final_answer": "President of STXinternational",
+      "cot_reasoning": "The Swedish-British executive is John Friedberg, executive producer of London Has Fallen (2016, dir. Babak Najafi). He currently serves as President o",
+      "is_correct": false,
+      "elapsed_seconds": 36.01
+    },
+    {
+      "id": 26,
+      "question": "an Emmy Award winner and two-time Tony Award winner, was on the episode 15 of the third season of \"Chuck\". what is her name ?",
+      "ground_truth": "Swoosie Kurtz",
+      "raw_draft": "好的，我们先一步步推理。  \n\n**1. 确定剧集信息**  \n题目说的是《Chuck》（超市特工）第三季第 15 集。  \n这一集的标题是 “Chuck Versus the Role Models”，播出日期是 2010 年 2 月 8 日。  \n\n**2. 找出该集的客串演员**  \n这一集的主要客串角色是一对特工夫妻，由两位知名演员饰演：  \n- **Fred Willard** 饰演 “Papa Bear”（特工角色名）  \n- **Swoosie Kurtz** 饰演 “Mama Bear”  \n\n**3. 核对获奖情况**  \n- **Swoosie Kurtz**：  \n  - 她获得过 **艾美奖**（1990 年凭《Sisters》获最佳客串女演员奖）。  \n  - 她获得过 **两次托尼奖**（1986 年《The House of Blue Leaves》获最佳话剧女配角奖；1978 年《A History of the American Film》获最佳话剧女配角奖）。  \n  这完全符合“艾美奖得主 + 两次托尼奖得主”的描述。  \n\n- Fred Willard 没有托尼奖，所以不是他。  \n\n**4. 确认**  \n因此，在《Chuck》S03E15 中，符合“艾美奖得主 + 两次托尼奖得主”的女演员是 **Swoosie Kurtz**。  \n\n**最终答案**：  \n**Swoosie Kurtz**",
+      "final_answer": "Swoosie Kurtz",
+      "cot_reasoning": "The report identifies Swoosie Kurtz as the Emmy and two-time Tony winner who guest-starred in Chuck S03E15.",
+      "is_correct": true,
+      "elapsed_seconds": 23.99
+    },
+    {
+      "id": 27,
+      "question": "Prince William, Duke of Gloucester and Prince George of Denmark, were eventually monarchs of which Kingdom?",
+      "ground_truth": "Great Britain",
+      "raw_draft": "好的，我们先来梳理一下这两个人物，并进行多步推理。  \n\n---\n\n**1. 确认人物身份**  \n\n- **Prince William, Duke of Gloucester**（1689–1700）  \n  他是英国国王威廉三世和玛丽二世的外甥吗？不对，需要查证。  \n  实际上，他是安妮女王（后来的英国女王）与乔治王子的唯一存活至童年的儿子。  \n  他的全名是 **威廉王子**，封号是 **格洛斯特公爵**。  \n  他是安妮女王（当时还是公主）的儿子，生于1689年，如果活下来，将是安妮之后的英国王位继承人。但他1700年夭折，导致安妮没有子嗣存活，从而引发了王位继承问题，最终导致1714年汉诺威选帝侯乔治一世继位（英国王位）。  \n\n- **Prince George of Denmark**（1653–1708）  \n  他是丹麦国王弗雷德里克三世的儿子，娶了英国的安妮公主（后来的安妮女王）。  \n  他本人从未成为丹麦国王，因为他的哥哥克里斯蒂安五世、侄子弗雷德里克四世先后在位。  \n  在英国，他是安妮女王的配偶，1702年安妮成为女王后，他被授予“坎伯兰公爵”等头衔，但只是王配，不是共治国王（英国法律不允许自动成为国王）。  \n\n---\n\n**2. 问题问的是“were eventually monarchs of which Kingdom?”**  \n\n从表面看：  \n- 格洛斯特公爵威廉王子 **从未成为君主**，他11岁去世，早于母亲安妮即位（他死于1700年，安妮1702年即位）。  \n- 丹麦的乔治王子 **从未成为丹麦君主**，也从未成为英国国王（只是亲王配偶）。  \n\n那么，是不是问题有陷阱？  \n可能他们 **各自** 最终成为某个王国的君主？但历史事实并非如此。  \n\n---\n\n**3. 考虑“eventually”是否指他们死后，其血统或继承权导致别人成为君主**  \n\n- 威廉王子（格洛斯特公爵）死后，安妮无子嗣，英国王位传给汉诺威选帝侯乔治一世，这是詹姆斯一世女儿的后代，不是通过威廉王子这一支。所以威廉王子本人没有成为君主，也没有直系后代成为君主。  \n- 乔治王子（丹麦）的后代？他和安妮的子女全部夭折，没有活到成年，所以也没有后代成为君主。  \n\n---\n\n**4. 会不会是题目把两个人混淆成“威廉三世”和“乔治一世”？**  \n\n威廉三世（荷兰执政兼英国国王）不是“格洛斯特公爵”，而是“奥兰治亲王”。  \n乔治一世（英国国王）不是“丹麦的乔治王子”，而是汉诺威选帝侯，母亲是英国公主，父亲是汉诺威选帝侯。  \n\n但丹麦的乔治王子的哥哥是丹麦国王，所以乔治王子本人不是君主。  \n\n---\n\n**5. 搜索可能的误解**  \n\n也许题目本意是问：  \n“Prince William, Duke of Gloucester, **and** Prince George of Denmark” 这两个人 **最终** 成为哪个王国的君主？  \n但历史上他们都没有成为君主。  \n\n除非——  \n“Prince George of Denmark” 可能被误认为是 **乔治一世**？但乔治一世不是丹麦王子，他是汉诺威人，母亲是索菲亚（英国公主）。  \n\n---\n\n**6. 另一种可能：题目问的是他们各自所属的王室（Kingdom）**  \n\n但那样问“were eventually monarchs of”就不通。  \n\n我怀疑原题可能是脑筋急转弯或历史 trick question：  \n**答案可能是“Neither was a monarch”** 或者 **“他们都没有成为君主”**。  \n\n但题目明确问“of which Kingdom”，所以可能预设有一个是对的。  \n\n查一下：  \n- 格洛斯特公爵威廉王子，如果没死，会成为 **英国国王**。  \n- 丹麦的乔治王子，如果活得比他侄子弗雷德里克四世长且继承丹麦王位，会成为 **丹麦国王**，但事实没有。  \n\n所以“eventually”可能指 **按照继承顺序他们本该继承的王国**？  \n\n但题目是“were eventually monarchs”，过去时，表示他们最终确实成了君主。  \n\n---\n\n**7. 我联网搜索一下**  \n\n（搜索后）  \n历史事实：  \n- 威廉王子（格洛斯特公爵）从未即位。  \n- 丹麦的乔治王子从未即位。  \n\n但有一个可能性：  \n**“Prince George of Denmark” 可能是指后来的乔治一世（英国）吗？** 不对，乔治一世不是丹麦王子。  \n\n不过，乔治一世在继承英国王位前是 **汉诺威选帝侯**，不是“丹麦的乔治王子”。  \n\n所以可能题目有误，或者是一个常见错误：把 **Prince George of Denmark**（安妮的丈夫）和 **King George I of Great Britain** 搞混。  \n\n如果把两个人换成 **威廉三世** 和 **乔治一世**，那么他们最终都是 **大不列颠王国（Kingdom of Great Britain）** 的君主（威廉三世在位时是英格兰和苏格兰共主邦联，1707年后是大不列颠王国，但威廉三世死于1702年，严格说他是英格兰国王和苏格兰国王，不是大不列颠国王，不过常被归为英国君主）。  \n\n---\n\n**8. 结论推断**  \n\n如果题目是原样，按历史事实回答：  \n**他们两人都没有成为任何王国的君主。**  \n\n但若按常见错误理解（即题目实际指威廉三世和乔治一世），则答案是 **Kingdom of Great Britain（大不列颠王国）**。  \n\n考虑到题目明确写了“Prince William, Duke of Gloucester”和“Prince George of Denmark”，这可能是陷阱题，测试是否知道他们并未即位。  \n\n---\n\n**最终答案**（根据真实历史）：  \n> Neither of them ever became a monarch.  \n> （他们最终都没有成为任何王国的君主。）  \n\n但如果你希望我按可能出题者混淆的答案来给，那就是：  \n> **Kingdom of Great Britain**（假设题目本意是指威廉三世和乔治一世）。  \n\n---\n\n**推理过程总结**：  \n1. 确认两人历史身份与生平。  \n2. 查证两人均未实际即位。  \n3. 考虑题目是否有误或陷阱，联想到英国汉诺威王朝起始的两位君主威廉三世和乔治一世。  \n4. 若按混淆版本，则他们先后统治的是大不列颠王国（威廉三世严格说统治的是英格兰、苏格兰、爱尔兰，但大不列颠王国成立于1707年，他死于1702年；不过历史书常将1689–1702的威廉三世列为英国君主之一）。  \n5. 按真实历史给出“都不是君主”的结论，但按常见错误可给出“大不列颠王国”。  \n\n---\n\n**最终结论（按真实历史）**：  \n**他们两人都没有成为任何王国的君主。**",
+      "final_answer": "Neither ever became a monarch",
+      "cot_reasoning": "Neither Prince William, Duke of Gloucester nor Prince George of Denmark ever became a monarch.",
+      "is_correct": false,
+      "elapsed_seconds": 71.2
+    },
+    {
+      "id": 28,
+      "question": "When a Man Falls in Love, is a 2013 South Korean television series, starring Song Seung-heon, Shin Se-kyung, Chae Jung-an, and which South Korean actor, born on ? ",
+      "ground_truth": "July 5, 1984",
+      "raw_draft": "**最终答案：蔡贞安（Chae Jung-an）**  \n\n**推理过程：**  \n1. 用户提问中提到：“When a Man Falls in Love, is a 2013 South Korean television series, starring Song Seung-heon, Shin Se-kyung, Chae Jung-an, and which South Korean actor, born on ?”  \n2. 通过联网搜索确认，该剧的主要演员包括：**宋承宪（Song Seung-heon）**、**申世景（Shin Se-kyung）**、**蔡贞安（Chae Jung-an）**，以及**延宇振（Yeon Woo-jin）**。  \n3. 问题中的空白部分询问“which South Korean actor, born on ?”，结合演员列表，延宇振的出生日期是**1984年7月5日**。  \n4. 因此，完整的答案是：另一位演员是**延宇振**，出生于**1984年7月5日**。  \n\n**结论：**  \n- 电视剧《当男人恋爱时》（2013年）的第四位主要演员是**延宇振（Yeon Woo-jin）**，他出生于**1984年7月5日**。",
+      "final_answer": "**最终答案：蔡贞安（Chae Jung-an）**",
+      "cot_reasoning": "[降级：从草稿首段提取，LLM 不可用]",
+      "is_correct": false,
+      "elapsed_seconds": 31.77
+    },
+    {
+      "id": 29,
+      "question": "Gülhane Park and Zografeion Lyceum, are located in which country?",
+      "ground_truth": "Turkey",
+      "raw_draft": "**Step 1: Identify the two locations mentioned.**  \nThe user asks about **Gülhane Park** and **Zografeion Lyceum**.  \n\n**Step 2: Search for information about Gülhane Park.**  \nGülhane Park is a historical urban park in Istanbul, Turkey. It is located next to Topkapı Palace and near the Hagia Sophia. It was once part of the palace grounds and opened to the public in the 19th century.  \n\n**Step 3: Search for information about Zografeion Lyceum.**  \nZografeion Lyceum is a Greek school founded in the 19th century in Istanbul (then Constantinople). It was established by the Zografos brothers and served the Greek community of the Ottoman Empire. It is still in operation today in Istanbul.  \n\n**Step 4: Determine the country both are located in.**  \nBoth are in Istanbul, which is the largest city in Turkey.  \n\n**Step 5: Confirm with reliable sources.**  \nCross-checking with historical and geographical sources confirms that Istanbul is in Turkey.  \n\n**Conclusion:**  \nGülhane Park and Zografeion Lyceum are both located in **Turkey**.",
+      "final_answer": "Turkey",
+      "cot_reasoning": "Both locations are in Istanbul, which is in Turkey.",
+      "is_correct": true,
+      "elapsed_seconds": 20.11
+    },
+    {
+      "id": 30,
+      "question": "Gary Harrison, began his career in the 1970s and has written over how many major-label recorded songs including several number-one hits, another artist who have recorded his work include Bryan White, an American country music artist?",
+      "ground_truth": "300",
+      "raw_draft": "好的，我们先一步步推理这个问题。  \n\n---\n\n**1. 理解问题**  \n问题提到：  \n- Gary Harrison  \n- 职业生涯始于 1970 年代  \n- 他写了超过多少首“major-label recorded songs”，包括几首冠军单曲  \n- 另外一位录制过他作品的艺人包括 Bryan White（美国乡村音乐歌手）  \n- 问题问的是“over how many major-label recorded songs”，也就是要填一个数字。  \n\n所以，这显然是一个事实查询题，需要找到 Gary Harrison 的创作歌曲数量（被大唱片公司录制发行的）。  \n\n---\n\n**2. 联网搜索 Gary Harrison 相关信息**  \n我搜索“Gary Harrison songwriter number of songs”以及“Gary Harrison major label recorded songs”等。  \n\n从可靠资料（如 AllMusic、BMI、Wikipedia）可知：  \n- Gary Harrison 是美国乡村音乐词曲作者，1970 年代开始职业生涯。  \n- 他创作了许多热门乡村歌曲，被多位著名歌手录制。  \n- 具体数字：根据 BMI 等版权组织的数据，他拥有 **超过 400 首** 被大唱片公司录制的歌曲。  \n- 他的代表作包括：  \n  - “I’m From the Country”（Tracy Byrd）  \n  - “Round About Way”（George Strait）  \n  - “One Friend”（Dan Seals）  \n  - “Love Ain’t Like That”（Faith Hill）  \n  - 以及为 Bryan White 写的歌（例如 Bryan White 的专辑中有他的作品）。  \n\n---\n\n**3. 核对 Bryan White 的联系**  \nBryan White 是 1990 年代成名的乡村歌手，Gary Harrison 确实为他写过歌，比如《So Much for Pretending》等，这符合题目中“another artist who have recorded his work include Bryan White”的提示。  \n\n---\n\n**4. 确认“over how many”的具体数字**  \n多个资料来源（包括采访、音乐行业简介）提到 Gary Harrison 的作品数量时常用“**over 400 major-label recorded songs**”这个说法。  \n例如：  \n- “Gary Harrison has written over 400 major-label recorded songs, including several number-one hits.”  \n- 这个数字在多个网站重复出现，应视为标准答案。  \n\n---\n\n**5. 结论**  \n因此，题目中空白处应填 **400**。  \n\n---\n\n**最终答案**：  \nGary Harrison 写了 **超过 400 首** 由大唱片公司录制的歌曲，其中包括多首冠军单曲，录制过他作品的艺人还包括 Bryan White。  \n\n**答案**：**400**",
+      "final_answer": "400",
+      "cot_reasoning": "The report clearly states Gary Harrison has written over 400 major-label recorded songs.",
+      "is_correct": false,
+      "elapsed_seconds": 37.62
+    },
+    {
+      "id": 31,
+      "question": "Hot Coffee, Mississippi sometimes shares a zipcode with a nearby city with what population at the 2010 census?",
+      "ground_truth": "2,586",
+      "raw_draft": "Alright — let’s break this down step by step.  \n\n**1. Understanding the question**  \nThe question says:  \n> “Hot Coffee, Mississippi sometimes shares a zipcode with a nearby city with what population at the 2010 census?”  \n\nSo we need to:  \n- Identify “Hot Coffee, Mississippi” (a place in Mississippi, USA).  \n- Find its zip code.  \n- Determine which nearby city shares that zip code.  \n- Find that city’s population in the 2010 census.  \n\n---\n\n**2. Basic facts about Hot Coffee, Mississippi**  \nHot Coffee is an unincorporated community in Covington County, Mississippi.  \nIt is known for its unusual name and is near Collins, MS.  \n\n---\n\n**3. Zip code information**  \nFrom available data:  \nHot Coffee, MS uses the zip code **39423**.  \nThat zip code is also used for **Collins, MS** (the nearby city).  \n\n---\n\n**4. Collins, MS population in 2010 census**  \nAccording to the U.S. Census Bureau, Collins, Mississippi had a **2010 census population** of **2,586**.  \n\n---\n\n**5. Conclusion**  \nThe nearby city sharing the zip code is **Collins, MS**, and its 2010 population was **2,586**.  \n\n---\n\n**Final answer:**  \n\\[\n\\boxed{2586}\n\\]",
+      "final_answer": "2,586",
+      "cot_reasoning": "The report identifies Collins, Mississippi as the nearby city sharing zipcode 39423 with Hot Coffee, and its 2010 census population is 2,586.",
+      "is_correct": true,
+      "elapsed_seconds": 21.35
+    },
+    {
+      "id": 32,
+      "question": "Pearl Lowe and Alison Goldfrapp, is of which nationality?",
+      "ground_truth": "English",
+      "raw_draft": "**Answer:**  \nBoth Pearl Lowe and Alison Goldfrapp are **British**.\n\n**Reasoning Process:**  \n1. **Pearl Lowe** – She is a British fashion designer, singer, and author. Born in London, England, she was part of the 1990s band Powder and is known for her work in fashion and textiles in the UK.  \n2. **Alison Goldfrapp** – She is an English musician and singer-songwriter, best known as the lead vocalist of the electronic duo Goldfrapp. She was born in London, England, and has spent her career primarily in the UK music scene.  \n\nBoth individuals were born and raised in England and have built their careers in the United Kingdom, confirming their British nationality.",
+      "final_answer": "British",
+      "cot_reasoning": "Both Pearl Lowe and Alison Goldfrapp are identified as British in the report.",
+      "is_correct": false,
+      "elapsed_seconds": 24.48
+    },
+    {
+      "id": 33,
+      "question": "What man, also known as mi Sde-Or, created a military self-defense system developed for the Israel Defense Forces?",
+      "ground_truth": "Emrich \"Imi\" Lichtenfeld",
+      "raw_draft": "您提到的 **mi Sde-Or**（有时写作 **Mi Sde-Or**）是 **Imi Lichtenfeld**（全名 **Imrich Lichtenfeld**）的希伯来语名字，意为“来自田野的人”。  \n\n**Imi Lichtenfeld** 是 **以色列马伽术（Krav Maga）** 的创始人。他在 20 世纪 40 年代末到 50 年代初为以色列国防军（IDF）开发了这套近身格斗与自我防卫体系，后来逐渐演变成全球知名的军用及民用防身术系统。  \n\n**简要背景**：  \n- 他出生于 1910 年的布达佩斯，在布拉迪斯拉发长大，年轻时是拳击、摔跤和体操冠军。  \n- 二战前，他为保护当地犹太社区免受暴力袭击，积累了街头自卫经验。  \n- 1948 年以色列建国后，他成为 IDF 的首席近战教官，并开始系统性地创建适合以色列军队的实用自卫技术，即马伽术。  \n\n因此，**mi Sde-Or（Imi Lichtenfeld）** 就是为以色列国防军创建该军事自卫系统的人。",
+      "final_answer": "Imi Lichtenfeld",
+      "cot_reasoning": "The report identifies mi Sde-Or as Imi Lichtenfeld, the founder of Krav Maga, developed for the IDF.",
+      "is_correct": true,
+      "elapsed_seconds": 23.89
+    },
+    {
+      "id": 34,
+      "question": "The Canada Memorial in Green Park, London, United Kingdom, commemorates members of the Canadian Forces killed during the First and Second World Wars, the memorial was the result of lobbying and fund raising, much of it in Canada, by the former Canadian media tycoon Conrad Moffat Black, his title is what, of this British former newspaper publisher and author?",
+      "ground_truth": "Lord Black of Crossharbour",
+      "raw_draft": "The title of Conrad Moffat Black is **Baron Black of Crossharbour**.  \n\n**Reasoning process:**  \n1. The question refers to Conrad Moffat Black, a former Canadian media tycoon involved in fundraising for the Canada Memorial in London.  \n2. Conrad Black is known for being a newspaper publisher and author.  \n3. He holds a British life peerage, which grants him the title \"Baron.\"  \n4. His full title is **Baron Black of Crossharbour**, named after the London Docklands area where his newspaper *The Daily Telegraph* was formerly located.  \n\n**Conclusion:**  \nConrad Moffat Black’s title is **Baron Black of Crossharbour**.",
+      "final_answer": "Baron Black of Crossharbour",
+      "cot_reasoning": "The research report explicitly states Conrad Moffat Black's title is Baron Black of Crossharbour.",
+      "is_correct": true,
+      "elapsed_seconds": 22.32
+    },
+    {
+      "id": 35,
+      "question": "he Central Harbourfront is a waterfront site it is the result of Central and Wan Chai Reclamation, and it sits to the east of the International Finance Centre (IFC), a skyscraper and an integrated commercial development on the waterfront of the Central District, of which territory?",
+      "ground_truth": "Hong Kong",
+      "raw_draft": "The Central Harbourfront is located in **Hong Kong Special Administrative Region of the People's Republic of China**.  \n\nTo break down the reasoning:  \n\n1. **Geographical Context** – The Central Harbourfront is a reclaimed land area along the northern shore of Hong Kong Island, specifically in the Central and Wan Chai districts.  \n2. **Political Context** – Hong Kong is a Special Administrative Region (SAR) of the People’s Republic of China, operating under the “One Country, Two Systems” framework since its handover from British rule in 1997.  \n3. **Specific Location** – The description mentions it is east of the International Finance Centre (IFC) in Central District. Central District is part of Hong Kong Island, which is within the territory of the Hong Kong SAR, China.  \n\nTherefore, the Central Harbourfront is situated in **Hong Kong, China**.",
+      "final_answer": "Hong Kong",
+      "cot_reasoning": "The report states the Central Harbourfront is in the Hong Kong Special Administrative Region, so the territory is Hong Kong.",
+      "is_correct": true,
+      "elapsed_seconds": 19.95
+    },
+    {
+      "id": 36,
+      "question": "The 2000–01 NBA season was the Jazz's 27th season in the National Basketball Association, and 22nd season in Salt Lake City, Utah, after the retirement of Jeff Hornacek, the Jazz signed free agents John Starks, and who?",
+      "ground_truth": "Danny Manning",
+      "raw_draft": "好的，我们先一步步推理。  \n\n**1. 问题核心**  \n问题是关于 2000–01 NBA 赛季犹他爵士队的一个操作：  \n- 杰夫·霍纳塞克（Jeff Hornacek）退役。  \n- 爵士队签下了自由球员约翰·斯塔克斯（John Starks）。  \n- 问：还签了谁？  \n\n**2. 背景信息**  \n2000 年夏天，爵士队面临阵容老化，霍纳塞克退役后需要补充后场。约翰·斯塔克斯是从勇士队交易来的吗？还是自由球员签约？  \n实际上，约翰·斯塔克斯在 2000 年 8 月是以自由球员身份与爵士签约的（之前他在公牛队，更早之前在勇士队）。  \n\n**3. 多跳检索需求**  \n这个问题需要回忆或查找 2000 年爵士队休赛期的主要自由球员签约（除了斯塔克斯之外还有谁比较知名）。  \n常见 NBA 历史知识：爵士队当时还签下了另一位老将后卫，也是前全明星，并且是自由球员。  \n\n**4. 联网搜索验证**  \n我通过联网搜索确认：  \n- 2000 年 8 月，爵士签下约翰·斯塔克斯（自由球员，此前在公牛）。  \n- 同时期，爵士还签下了另一名重要的自由球员：**丹尼·曼宁（Danny Manning）**。  \n曼宁是 1998 年全明星，当时 34 岁，从雄鹿队成为自由球员后与爵士签了一年合同。  \n\n**5. 交叉验证**  \n查看 2000–01 爵士阵容变化：  \n离开的球员：霍纳塞克（退役）、霍华德·埃斯利（交易去小牛）、亚当·基夫（自由球员离开）等。  \n新加入：约翰·斯塔克斯、丹尼·曼宁（自由球员签约），以及通过交易得到的唐耶尔·马绍尔等。  \n但问题明确说“签下自由球员约翰·斯塔克斯，和谁？”——答案就是丹尼·曼宁。  \n\n**6. 最终答案**  \n因此，答案是 **丹尼·曼宁（Danny Manning）**。  \n\n---\n\n**最终结论**：  \n爵士在霍纳塞克退役后，于 2000 年休赛期签下的另一位知名自由球员是 **丹尼·曼宁**。",
+      "final_answer": "Danny Manning",
+      "cot_reasoning": "The research report identifies Danny Manning as the other free agent signed alongside John Starks.",
+      "is_correct": true,
+      "elapsed_seconds": 31.95
+    },
+    {
+      "id": 37,
+      "question": "Mookychick is an independent daily online magazine and community with more than 100,000 readers a month and over 5,000 forum members, content includes analysis of current sociopolitical events, social and cultural trends, alternative fashion, movies, books, music and arts and crafts from a feminist perspective, in contrast with feminist publications and communities such as which women's lifestyle magazine that is published six times a year, and is published by Debbie Stoller and Laurie Henzel? ",
+      "ground_truth": "BUST",
+      "raw_draft": "好的，我们先一步步推理。  \n\n---\n\n**1. 理解问题**  \n问题先描述了 Mookychick 是一个独立在线杂志和社区，内容涵盖社会政治事件、时尚、文化等，视角是女权主义的。  \n然后说“in contrast with feminist publications and communities such as which women's lifestyle magazine that is published six times a year, and is published by Debbie Stoller and Laurie Henzel?”  \n意思是：与 Mookychick 形成对比的是哪个女权主义出版物/社区？这个出版物是一本女性生活方式杂志，每年出版六次，由 Debbie Stoller 和 Laurie Henzel 出版。  \n\n---\n\n**2. 关键线索**  \n- 每年六期 → 双月刊（bimonthly，但注意英文 bimonthly 可能歧义，这里明确是 six times a year）。  \n- 女性生活方式杂志，女权主义视角。  \n- 出版者：Debbie Stoller 和 Laurie Henzel。  \n\nDebbie Stoller 是著名的女权主义者、作家，以《BUST》杂志的联合创始人而闻名。  \n\n---\n\n**3. 联网搜索验证**  \n我搜索“Debbie Stoller Laurie Henzel magazine six times a year”或类似信息。  \n\n已知《BUST》杂志正是一本女权主义流行文化杂志，1993 年由 Debbie Stoller、Laurie Henzel 和 Marcelle Karp 在纽约创立。  \n《BUST》最初是季刊，后来改为双月刊（每年六期），内容涵盖女性时尚、音乐、艺术、性、人际关系等，带有女权主义视角。  \n\n---\n\n**4. 对比说明**  \nMookychick 是独立在线杂志，每日更新，社区驱动；  \n《BUST》是印刷杂志（也有在线内容），每年六期，更偏向流行文化与生活方式，也是女权主义视角，但形式、出版频率不同。  \n\n---\n\n**5. 结论**  \n答案就是 **BUST** 杂志。  \n\n---\n\n**最终答案**：  \n**BUST**",
+      "final_answer": "BUST",
+      "cot_reasoning": "The magazine published by Debbie Stoller and Laurie Henzel, six times a year, is BUST.",
+      "is_correct": true,
+      "elapsed_seconds": 30.72
+    },
+    {
+      "id": 38,
+      "question": "Jane's Addiction and Weeping Willows, play which genre of music?",
+      "ground_truth": "rock",
+      "raw_draft": "好的，我将通过联网搜索来获取准确信息，并为你提供详细的推理过程和结论。\n\n### 联网搜索结果\n1. **Jane's Addiction**：\n   - 根据搜索结果，Jane's Addiction 是一支成立于1985年的美国摇滚乐队，被广泛认为是另类摇滚的先驱之一。他们的音乐融合了硬摇滚、朋克、放克和金属元素，并带有艺术摇滚和迷幻摇滚的影响。他们常被归类为 **另类摇滚** 或 **另类金属**，并对1990年代的另类摇滚运动产生了重要影响。\n\n2. **Weeping Willows**：\n   - 根据搜索结果，存在多支名为 Weeping Willows 的乐队。最著名的是瑞典的 **Weeping Willows**，成立于1995年，其音乐风格被描述为 **另类乡村、民谣摇滚和悲伤核心**。他们深受1960年代美国乡村和民谣音乐的影响，如 Gram Parsons 和 Lee Hazlewood。另外，还有一支美国纽约的乐队也叫 Weeping Willows，但知名度较低，风格为独立摇滚。\n\n### 推理过程\n1. **问题分析**：用户询问两支乐队（Jane's Addiction 和 Weeping Willows）的音乐流派。这是一个需要分别检索并综合回答的问题。\n2. **信息检索策略**：\n   - 由于乐队名称可能存在歧义（尤其是 Weeping Willows），我优先搜索知名度最高、资料最全的版本。\n   - 对于 Jane's Addiction，其音乐风格有明确的共识，搜索时以权威音乐资料为准。\n   - 对于 Weeping Willows，我通过搜索结果发现瑞典乐队更具影响力，因此以此为主要答案，并简要说明其他可能性以避免混淆。\n3. **信息验证**：\n   - 我检查了多个来源（如音乐数据库、乐队简介、乐评），确认 Jane's Addiction 的流派标签为“另类摇滚”和“另类金属”。\n   - 对于瑞典的 Weeping Willows，我确认其风格与“另类乡村”和“民谣摇滚”强相关，并参考了其受影响的音乐人作为佐证。\n4. **综合判断**：\n   - 两支乐队的风格差异很大，但都属于广义的“摇滚”范畴下的不同子类。因此，回答时需要清晰区分，避免笼统概括。\n\n### 最终结论\n- **Jane's Addiction** 主要演奏 **另类摇滚**，并带有强烈的另类金属、硬摇滚和艺术摇滚元素。他们是1990年代另类摇滚运动的关键先驱之一。\n- **Weeping Willows**（通常指瑞典乐队）主要演奏 **另类乡村** 和 **民谣摇滚**，风格忧郁、怀旧，深受1960年代美国乡村音乐影响。\n\n**注意**：如果用户指的是其他同名乐队（如美国独立摇滚乐队 Weeping Willows），风格可能不同，但瑞典乐队是其最知名的代表。",
+      "final_answer": "好的，我将通过联网搜索来获取准确信息，并为你提供详细的推理过程和结论。",
+      "cot_reasoning": "[降级：从草稿首段提取，LLM 不可用]",
+      "is_correct": false,
+      "elapsed_seconds": 40.38
+    },
+    {
+      "id": 39,
+      "question": "Throne of Glass is a young adult high fantasy novel series, by which bestselling American fantasy author?",
+      "ground_truth": "Sarah Janet Maas",
+      "raw_draft": "《Throne of Glass》系列小说的作者是**莎拉·J·玛斯（Sarah J. Maas）**，她是一位美国畅销奇幻小说作家。该系列自2012年首部作品出版后迅速走红，成为全球畅销的青少年奇幻文学代表作之一。\n\n**补充信息：**\n1. **作者背景**：莎拉·J·玛斯于1986年出生于纽约，大学期间开始创作《Throne of Glass》系列，最初在文学网站FictionPress上连载，后经修改出版。\n2. **系列成就**：该系列共包括7部主线小说及多部番外中篇小说，被翻译成37种语言，全球销量超过千万册，常年位居《纽约时报》畅销书榜单。\n3. **关联作品**：玛斯另一畅销系列《A Court of Thorns and Roses》（《荆棘与玫瑰的法庭》）同样风靡全球，巩固了她在青少年奇幻文学领域的地位。\n\n**结论**：《Throne of Glass》系列由美国奇幻作家莎拉·J·玛斯创作，她的作品以强女主角、复杂世界观和浪漫元素融合奇幻冒险而广受读者喜爱。",
+      "final_answer": "Sarah J. Maas",
+      "cot_reasoning": "The report states the author is Sarah J. Maas, a bestselling American fantasy author.",
+      "is_correct": true,
+      "elapsed_seconds": 22.27
+    },
+    {
+      "id": 40,
+      "question": " \"Let Me Out\" is a song released as the fifth single from what band's fifth studio album \"Humanz\" which was recorded in London, Paris, New York City, Chicago, and Jamaica ?",
+      "ground_truth": "alternative rock virtual band Gorillaz",
+      "raw_draft": "**推理过程：**  \n\n1. 用户提问中提到歌曲《Let Me Out》是第五张录音室专辑《Humanz》的第五支单曲。  \n2. 已知《Humanz》是英国虚拟乐队**Gorillaz**的第五张录音室专辑，于2017年发行。  \n3. 根据专辑制作背景资料，《Humanz》的录音地点包括伦敦、巴黎、纽约、芝加哥和牙买加等地，与题目描述吻合。  \n4. 《Let Me Out》作为单曲于2017年发行，收录于《Humanz》中，演唱者包括**Gorillaz**、Pusha T和Mavis Staples。  \n\n**结论：**  \n这首歌来自**Gorillaz**乐队的专辑《Humanz》。  \n\n**最终答案：**  \n**Gorillaz**",
+      "final_answer": "Gorillaz",
+      "cot_reasoning": "The report identifies the band as Gorillaz, which released the album Humanz.",
+      "is_correct": true,
+      "elapsed_seconds": 24.52
+    },
+    {
+      "id": 41,
+      "question": "Superheaven and Oceansize, are bands of which shared genre?",
+      "ground_truth": "rock",
+      "raw_draft": "After conducting a search, I can provide a detailed answer.\n\n**Superheaven** (formerly known as **Daylight**) and **Oceansize** are both bands that are primarily associated with the broader genre of **Alternative Rock**.\n\nHowever, to be more precise and to understand the connection and the differences, we need to break down their specific sub-genre influences:\n\n### Superheaven\n*   **Core Genre:** **Alternative Rock / Grunge Revival**\n*   **Key Sound:** Their music is heavily rooted in the 1990s grunge and alternative rock sound. You can hear clear influences from bands like **Nirvana, Smashing Pumpkins, and Alice in Chains**.\n*   **Sub-genre Tags:** They are often specifically labeled as **\"90s alternative revival,\" \"grungegaze\"** (a blend of grunge and shoegaze textures), and **emo** (leaning towards the darker, more melodic 1990s \"Midwest emo\" or \"post-hardcore\" style rather than the pop-punk of the 2000s).\n*   **Vibe:** Raw, melodic, downtuned, and characterized by a balance of heavy, fuzzy distortion and melancholic vocal melodies.\n\n### Oceansize\n*   **Core Genre:** **Progressive Rock / Alternative Rock**\n*   **Key Sound:** They were known for their complex song structures, odd time signatures, dynamic shifts, and atmospheric textures. Their sound is a fusion of alternative rock with progressive and post-rock elements.\n*   **Sub-genre Tags:** Commonly described as **progressive rock, post-rock, and space rock**. They share sonic territory with bands like **Tool, Porcupine Tree, and Mogwai**.\n*   **Vibe:** Epic, cinematic, intricate, and layered, often building from quiet, atmospheric passages to massive, crushing crescendos.\n\n### The Shared Genre & Connection\n1.  **Alternative Rock:** This is the primary umbrella genre they both fall under. They emerged from the same foundational idea of guitar-based rock music that exists outside the mainstream pop or classic rock traditions.\n2.  **The \"Size\" Family:** This is a crucial point of connection. Both bands are part of what fans and critics sometimes call the **\"size\" family or scene**. This informal grouping originated in the UK in the late 1990s/early 2000s and includes bands with \"size\" in their name, such as:\n    *   **Oceansize**\n    *   **Biffy Clyro** (early work was more math-rock)\n    *   **Fightstar**\n    *   ****Superheaven** is the American outlier in this list, but they are frequently mentioned in this context because of their name and their stylistic alignment with the heavier, melodic side of this group's sound.\n\nWhile they share the \"size\" naming convention and the alternative rock foundation, their musical execution is quite different:\n*   **Superheaven** is more direct, grunge-influenced, and song-focused.\n*   **Oceansize** is more experimental, progressive, and compositionally expansive.\n\n**Final Conclusion:**\n\n**Superheaven and Oceansize are both bands within the broad genre of Alternative Rock.** Their most specific point of connection is their membership in the informal **\"size\" band scene** (e.g., Oceansize, Biffy Clyro, Fightstar). However, within alternative rock, they explore different sub-genres: Superheaven is a **Grunge Revival/90s Alternative** band, while Oceansize was a **Progressive/Post-Rock** band.",
+      "final_answer": "Alternative Rock",
+      "cot_reasoning": "The report explicitly states that both bands fall under the broad genre of Alternative Rock as their primary shared genre.",
+      "is_correct": false,
+      "elapsed_seconds": 47.07
+    },
+    {
+      "id": 42,
+      "question": "Canton Road Station was a planned railway station on the Kowloon Southern Link of West Rail Line, that was to run beneath a large shopping mall located where?",
+      "ground_truth": "Tsim Sha Tsui, Hong Kong",
+      "raw_draft": "Canton Road Station was a planned railway station on the Kowloon Southern Link of the West Rail Line, intended to be located beneath the **Elements shopping mall** in the **Union Square development** in West Kowloon, Hong Kong.",
+      "final_answer": "Union Square development",
+      "cot_reasoning": "The report states the station was intended to be located beneath the Elements shopping mall in the Union Square development.",
+      "is_correct": false,
+      "elapsed_seconds": 17.11
+    },
+    {
+      "id": 43,
+      "question": "Michael Ralph DeVito (born June 10, 1984) is a former American football defensive end, he  the National Football League (NFL), DeVito attended high school at Nauset Regional High School an NEASC accredited high school located in North Eastham, in which state?",
+      "ground_truth": "Massachusetts",
+      "raw_draft": "Michael Ralph DeVito attended Nauset Regional High School, which is located in **Massachusetts**.  \n\n**推理过程：**  \n1. 题目中提到“Nauset Regional High School”位于“North Eastham”。  \n2. 通过联网检索确认，North Eastham 是马萨诸塞州（Massachusetts）的一个地区。  \n3. 因此，Nauset Regional High School 所在州为马萨诸塞州。  \n\n**结论：**  \nNauset Regional High School 位于马萨诸塞州（Massachusetts）。",
+      "final_answer": "Michael Ralph DeVito attended Nauset Regional High School, which is located in **Massachusetts**.",
+      "cot_reasoning": "[降级：从草稿首段提取，LLM 不可用]",
+      "is_correct": true,
+      "elapsed_seconds": 18.21
+    },
+    {
+      "id": 44,
+      "question": "What type of species is a Boreo-arctic Montane species found in the most northerly of the abstract five major circles of latitude as shown on maps of the Earth?",
+      "ground_truth": "beetle",
+      "raw_draft": "好的，我们先一步步推理。  \n\n---\n\n**1. 理解问题中的关键信息**  \n\n- **“Boreo-arctic Montane species”**  \n  这是一个生物地理学术语，指分布在北方（Boreal）和北极（Arctic）区域，并且适应山地（Montane）环境的物种。这类物种可能在冰期时向南扩散，间冰期时退到高纬度或高海拔的寒冷地带。  \n\n- **“最北的五个抽象的主要纬度圈”**  \n  地图上常见的五个主要纬度圈（从北到南）是：  \n  1. **北极圈**（Arctic Circle，约 66.5°N）  \n  2. **北回归线**（Tropic of Cancer，约 23.5°N）  \n  3. **赤道**（0°）  \n  4. **南回归线**（Tropic of Capricorn，约 23.5°S）  \n  5. **南极圈**（Antarctic Circle，约 66.5°S）  \n\n  其中最北的是 **北极圈**。  \n\n- 所以问题问的是：**一种在北极圈内分布的 Boreo-arctic Montane 物种是什么类型**（可能是植物、动物、真菌等类别）？  \n\n---\n\n**2. 联网检索 Boreo-arctic Montane species 例子**  \n\n我搜索一下这个术语的典型例子。  \n\n（搜索过程略，基于知识库和常见例子）  \n\nBoreo-arctic Montane 物种常见于：  \n- 植物：如 **矮桦（Betula nana）**、**极地柳（Salix polaris）** 等，它们分布在高纬度北极地区，也见于中纬度高山（如阿尔卑斯、斯堪的纳维亚山脉）。  \n- 动物：如 **岩雷鸟（Lagopus muta）**，在北极和亚北极以及高山苔原都有分布。  \n- 更经典的例子是 **北极狐（Vulpes lagopus）**？但北极狐主要在北冰洋沿岸苔原，不算典型的“Montane”（高山），除非是冰期避难到山区。  \n\n实际上，生物地理学文献中常提到的 Boreo-arctic Montane 物种多是 **植物和昆虫**，因为它们容易在冰期时在山区存活，并在气候变暖时退到高纬度。  \n\n---\n\n**3. 确定“最北的五个主要纬度圈”所指**  \n\n如果严格按“最北的五个主要纬度圈”理解，就是北极圈内。  \n但北极圈内 Boreo-arctic Montane 物种可能包括：  \n\n**帚石楠（Calluna vulgaris）**？它分布较广，不限于北极圈。  \n**仙女木（Dryas octopetala）** 是典型的北极-高山植物，在北极圈内常见，也见于欧洲高山，符合 Boreo-arctic Montane 定义。  \n\n---\n\n**4. 推测题目可能指向的物种类型**  \n\n考虑到这是一个类似地理或生物竞赛题，可能期望的答案是：  \n- 一种 **北极-高山植物**（Arctic–alpine plant）  \n- 或者更具体一点，例如 **Dryas octopetala（八瓣仙女木）** 作为代表物种。  \n\n但题目问的是“What type of species is...”，可能希望回答 **“它是一种北极-高山植物”** 或者 **“它是一种分布在北极圈内的 Boreo-arctic Montane 植物”**。  \n\n---\n\n**5. 最终结论**  \n\n结合生物地理学分类和题目给出的限定，最合理的答案是：  \n\n> **它是一种北极-高山植物（Arctic–alpine plant），属于 Boreo-arctic Montane 分布型，典型例子如八瓣仙女木（Dryas octopetala）。**  \n\n---\n\n**最终答案**：  \n**它是一种北极-高山植物（Arctic–alpine plant），属于 Boreo-arctic Montane 分布型。**",
+      "final_answer": "Arctic-alpine plant",
+      "cot_reasoning": "The question asks for the type of species, and the report identifies Boreo-arctic Montane species as Arctic-alpine plants.",
+      "is_correct": false,
+      "elapsed_seconds": 47.6
+    },
+    {
+      "id": 45,
+      "question": "The John Messer Barn is a historic structure within the Great Smoky Mountains National Park in Sevier County, Tennessee, this barn is a different Messer Barn in which valley, in the Great Smoky Mountains of North Carolina, located in the Southeastern United States?",
+      "ground_truth": "Cataloochee",
+      "raw_draft": "好的，我们先一步步推理。  \n\n---\n\n**1. 理解问题**  \n题目说：  \n- 有一个“John Messer Barn”位于田纳西州 Sevier County 的大烟山国家公园内。  \n- 但问题问的是“另一个 Messer Barn”在哪个山谷，这个谷位于北卡罗来纳州的大烟山区域（美国东南部）。  \n- 所以，要找的是北卡罗来纳州大烟山地区另一个著名的 Messer Barn 所在的山谷名称。  \n\n---\n\n**2. 联网搜索**  \n我搜索“Messer Barn North Carolina Great Smoky Mountains valley”。  \n\n从资料得知：  \n- 大烟山国家公园里有多处历史建筑，其中“Messer Barn”不止一个。  \n- 田纳西州 Sevier County 的 John Messer Barn 位于 **Greenbrier** 区域。  \n- 北卡罗来纳州部分也有一个著名的 Messer Barn，位于 **Cataloochee Valley**（有时拼写为 Cataloochee）。  \n\n具体来说，北卡罗来纳州 Haywood County 的 Cataloochee Valley 是公园内一个保存完好的历史社区，那里有 **Messer Place**（包括 Messer Barn 和 Messer Farmhouse），属于历史建筑群。  \n\n---\n\n**3. 确认信息**  \n根据国家公园官网及历史资料：  \n- Cataloochee Valley 在 19 世纪末到 20 世纪初有 Messer 家族定居。  \n- 公园保护了其中的 Messer Barn 作为该地区早期移民生活的代表。  \n- 这与田纳西州 Greenbrier 的 John Messer Barn 是不同的。  \n\n---\n\n**4. 最终答案**  \n北卡罗来纳州大烟山地区的这个 Messer Barn 位于 **Cataloochee Valley**。  \n\n---\n\n**结论**：  \n> **Cataloochee Valley**",
+      "final_answer": "Cataloochee Valley",
+      "cot_reasoning": "The report specifies that the other Messer Barn is located in Cataloochee Valley in North Carolina.",
+      "is_correct": true,
+      "elapsed_seconds": 28.33
+    },
+    {
+      "id": 46,
+      "question": "The NBC-affiliated television station, owned by an American telecommunications company whose founder is Julian Sinclair Smith, called WJAR is more commonly known as what?",
+      "ground_truth": "NBC 10",
+      "raw_draft": "好的，我们先一步步推理。  \n\n---\n\n**第一步：确定题目中的关键信息**  \n题目说：  \n- 一个 NBC 附属电视台  \n- 由一家美国电信公司拥有  \n- 这家公司的创始人是 Julian Sinclair Smith  \n- 电视台呼号是 **WJAR**  \n- 问它更常用的名称是什么  \n\n---\n\n**第二步：查找公司创始人 Julian Sinclair Smith**  \n我联网搜索一下 Julian Sinclair Smith。  \n\n搜索结果显示：Julian Sinclair Smith 是 **Sinclair Broadcast Group**（辛克莱广播集团）的创始人。  \n辛克莱是美国一家大型电视广播公司，也涉足电信领域，符合“美国电信公司”的描述（虽然它主要做电视广播，但也有电信业务如辛克莱电信）。  \n\n---\n\n**第三步：确认 WJAR 是否属于辛克莱，并且是 NBC 附属台**  \n搜索 WJAR。  \n\nWJAR 是罗德岛州普罗维登斯的一个电视台，频道是虚拟 10 频道（实际 RF 频道 49），确实是 NBC 附属台。  \n它的所有者历史上几经变更，但近年（2014 年后）被辛克莱广播集团收购。  \n\n---\n\n**第四步：WJAR 更常用的名称**  \n在美国，很多电视台除了呼号外，会有一个“品牌名称”，比如叫“10 News”、“NBC 10” 等。  \n搜索 WJAR 的常用品牌。  \n\n结果显示：WJAR 长期以 **“NBC 10”** 作为品牌名（早期曾用“Channel 10”等）。  \n现在它的品牌就是 **“NBC 10 News”**（或简写 NBC 10）。  \n\n---\n\n**第五步：验证**  \n在维基百科或电视台官网可见，WJAR 自 1996 年起就使用“NBC 10”品牌，之前也用过“Channel 10”。  \n所以，更常用的称呼就是 **NBC 10**（尤其在罗德岛地区）。  \n\n---\n\n**最终答案**：  \nWJAR 更常用的名称是 **NBC 10**（或 NBC 10 News）。  \n\n---\n\n**推理过程总结**：  \n1. 根据创始人 Julian Sinclair Smith 确定母公司是 Sinclair Broadcast Group。  \n2. 找到 Sinclair 旗下 NBC 附属台 WJAR。  \n3. 查证 WJAR 的本地品牌名，发现是 “NBC 10”。  \n4. 确认该品牌为普罗维登斯地区观众熟知的名字。  \n\n---\n\n**最终结论**：  \n**NBC 10**。 ✅",
+      "final_answer": "NBC 10",
+      "cot_reasoning": "WJAR is an NBC affiliate owned by Sinclair Broadcast Group (founder Julian Sinclair Smith) and its common branding is \"NBC 10\".",
+      "is_correct": true,
+      "elapsed_seconds": 34.13
+    },
+    {
+      "id": 47,
+      "question": "What profession do Kōbō Abe and Agatha Christie share?",
+      "ground_truth": "playwright",
+      "raw_draft": "Kōbō Abe and Agatha Christie **both were writers**, specifically **novelists and playwrights**.  \n\n**推理过程：**  \n1. **Kōbō Abe**（安部公房）是日本著名作家，以小说《砂丘之女》《箱男》等闻名，同时也创作戏剧。  \n2. **Agatha Christie**（阿加莎·克里斯蒂）是英国作家，以侦探小说（如《东方快车谋杀案》《无人生还》）和戏剧（如《捕鼠器》）著称。  \n3. 两人虽然写作风格与题材不同，但职业身份重合的部分包括：  \n   - 小说家（novelist）  \n   - 剧作家（playwright）  \n\n因此，他们共享的职业是 **作家（writer）**，更具体地说是 **小说家与剧作家**。  \n\n**结论：**  \nKōbō Abe 和 Agatha Christie 共享的职业是 **作家（writer）**，两人均创作小说与戏剧。",
+      "final_answer": "writers",
+      "cot_reasoning": "Both are identified as writers, novelists, and playwrights; the shared profession is writer.",
+      "is_correct": false,
+      "elapsed_seconds": 27.1
+    },
+    {
+      "id": 48,
+      "question": "Jinchang and Liling, are located in which country?",
+      "ground_truth": "China",
+      "raw_draft": "**联网搜索结果：**  \n1. 根据百度百科，**金昌市**（Jinchang）是中华人民共和国甘肃省下辖的地级市，位于甘肃省中部。  \n2. 根据百度百科，**醴陵市**（Liling）是中华人民共和国湖南省下辖的县级市，由株洲市代管，以陶瓷产业闻名。  \n\n**结论：**  \n金昌市和醴陵市均位于**中华人民共和国（中国）**。",
+      "final_answer": "China",
+      "cot_reasoning": "Both Jinchang and Liling are cities in China, as stated in the report.",
+      "is_correct": true,
+      "elapsed_seconds": 15.46
+    },
+    {
+      "id": 49,
+      "question": "Which band has more members, Muse or The Raconteurs?",
+      "ground_truth": "The Raconteurs",
+      "raw_draft": "好的，我们来一步步推理并查找信息。  \n\n---\n\n**第一步：确认 Muse 的成员数量**  \nMuse 是一支英国摇滚乐队，成立于 1994 年。  \n核心固定成员有 3 人：  \n- Matthew Bellamy（主唱、吉他、键盘）  \n- Chris Wolstenholme（贝斯、和声）  \n- Dominic Howard（鼓、打击乐）  \n\n在录音室和现场演出中，他们有时会有巡演乐手（例如键盘/吉他/和声的 Morgan Nicholls 等），但官方乐队成员是 **3 人**。  \n\n---\n\n**第二步：确认 The Raconteurs 的成员数量**  \nThe Raconteurs 是美国摇滚乐队，成立于 2005 年。  \n固定成员有 4 人：  \n- Jack White（吉他、主唱）  \n- Brendan Benson（吉他、主唱）  \n- Jack Lawrence（贝斯、和声）  \n- Patrick Keeler（鼓）  \n\n他们通常没有长期巡演乐手作为正式成员，所以官方成员是 **4 人**。  \n\n---\n\n**第三步：比较**  \nMuse：3 名固定成员  \nThe Raconteurs：4 名固定成员  \n\n因此 **The Raconteurs** 有更多成员。  \n\n---\n\n**最终答案**：  \n**The Raconteurs** 有更多成员（4 人），而 Muse 有 3 人。",
+      "final_answer": "The Raconteurs",
+      "cot_reasoning": "Muse has 3 official members, The Raconteurs has 4, so The Raconteurs has more.",
+      "is_correct": true,
+      "elapsed_seconds": 22.04
+    }
+  ]
+}
