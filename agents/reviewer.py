@@ -203,28 +203,28 @@ def _coerce_text_review_to_json(raw: str) -> Dict[str, Any] | None:
     # 兜底时给保守的低分，不让报告轻易通过
     if is_pass:
         scores = {"S1": 7, "S2": 7, "S3": 7, "S4": 7}
-        weighted = 7.0
     else:
         scores = {"S1": 4, "S2": 5, "S3": 4, "S4": 5}
-        weighted = 0.35 * 4 + 0.25 * 5 + 0.25 * 4 + 0.15 * 5
 
-    return {
-        "scores": scores,
-        "weighted_score": round(weighted, 2),
-        "is_satisfactory": is_pass,
-        "needs_more_research": needs_more_research if not is_pass else False,
-        "critique_feedback": "草稿通过当前评审，可结束流程。" if is_pass else text[:1200],
-        "citation_checks": [],
-        "fact_issues": fact_issues,
-        "logic_issues": logic_issues,
-        "info_gaps": info_gaps,
-        "score_rationale": {"S1": "兜底解析", "S2": "兜底解析", "S3": "兜底解析", "S4": "兜底解析"},
-        "supporter": {"strengths": ["审稿文本判定为通过"] if is_pass else [], "supported_claims": []},
-        "skeptic": {"critical_issues": fact_issues + logic_issues, "missing_evidence": info_gaps},
-        "controversy_points": [],
-        "evidence_verdicts": [],
-        "review_mode": "coerce_fallback",
-    }
+    # 是否放行交由 _finalize_review 按阈值统一判定（本路径为降级路径，默认不放行）
+    return _finalize_review(
+        {
+            "scores": scores,
+            "needs_more_research": needs_more_research if not is_pass else False,
+            "critique_feedback": "草稿通过当前评审，可结束流程。" if is_pass else text[:1200],
+            "citation_checks": [],
+            "fact_issues": fact_issues,
+            "logic_issues": logic_issues,
+            "info_gaps": info_gaps,
+            "score_rationale": {"S1": "兜底解析", "S2": "兜底解析", "S3": "兜底解析", "S4": "兜底解析"},
+            "supporter": {"strengths": ["审稿文本判定为通过"] if is_pass else [], "supported_claims": []},
+            "skeptic": {"critical_issues": fact_issues + logic_issues, "missing_evidence": info_gaps},
+            "controversy_points": [],
+            "evidence_verdicts": [],
+        },
+        mode="coerce_fallback",
+        degraded=True,
+    )
 
 
 def _parse_review_json(raw: str) -> Dict[str, Any]:
@@ -287,6 +287,73 @@ def _compute_weighted_score(scores: Dict[str, Any]) -> float:
     return round(total, 4)
 
 
+def _resolve_pass_threshold() -> float:
+    """安全解析通过阈值，避免环境变量畸形触发额外降级。"""
+
+    try:
+        return float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
+    except (TypeError, ValueError):
+        return 7.5
+
+
+def _allow_degraded_pass() -> bool:
+    """降级评审是否允许放行。
+
+    默认不允许：降级路径只能更保守，不能比 LLM 评审更容易通过。
+    仅在显式设置 REVIEWER_ALLOW_DEGRADED_PASS=1 时放行（仍会打降级标记）。
+    """
+
+    return os.getenv("REVIEWER_ALLOW_DEGRADED_PASS", "0").strip() == "1"
+
+
+def _finalize_review(
+    review: Dict[str, Any],
+    mode: str,
+    degraded: bool = False,
+) -> Dict[str, Any]:
+    """所有评审结果的唯一收口：统一计算加权分、通过判定与路由建议。
+
+    约定：
+    - 生产者（LLM 评审 / 语义兜底 / 规则评审）只负责给出 scores 与建议字段，
+      通过与否一律由本函数按 REVIEWER_PASS_THRESHOLD 判定；
+    - 加权分以本地公式为准，不采用生产者自报的 weighted_score；
+    - 降级评审（规则兜底 / 语义兜底）默认不放行，除非显式开启
+      REVIEWER_ALLOW_DEGRADED_PASS。
+    """
+
+    threshold = _resolve_pass_threshold()
+    scores = review.get("scores", {}) or {}
+    weighted = _compute_weighted_score(scores)
+
+    meets_threshold = weighted >= threshold
+    degraded_blocked = degraded and meets_threshold and not _allow_degraded_pass()
+    is_satisfactory = meets_threshold and not degraded_blocked
+
+    if is_satisfactory:
+        needs_more_research = False
+    else:
+        # S1 < 5（事实严重问题）或 S3 < 4（覆盖严重不足）→ 回 Researcher；
+        # 生产者（含 LLM）给出的 needs_more_research 建议取并集保留。
+        needs_more_research = (
+            float(scores.get("S1", 0)) < RESEARCHER_S1_THRESHOLD
+            or float(scores.get("S3", 0)) < RESEARCHER_S3_THRESHOLD
+            or bool(review.get("needs_more_research", False))
+        )
+
+    review.update(
+        {
+            "weighted_score": weighted,
+            "is_satisfactory": is_satisfactory,
+            "needs_more_research": needs_more_research,
+            "pass_threshold": threshold,
+            "review_mode": mode,
+            "degraded": degraded,
+            "degraded_blocked": degraded_blocked,
+        }
+    )
+    return review
+
+
 def _rule_based_review(
     draft: str,
     retrieved_context: List[Dict[str, Any] | str],
@@ -298,111 +365,121 @@ def _rule_based_review(
 
     if n_ctx < MIN_CONTEXT_ITEMS:
         scores = {"S1": 2, "S2": 5, "S3": 2, "S4": 4}
-        weighted = _compute_weighted_score(scores)
-        return {
-            "scores": scores,
-            "weighted_score": weighted,
-            "is_satisfactory": False,
-            "needs_more_research": True,
-            "critique_feedback": "当前证据不足，请补充更多高质量来源并覆盖不同观点。",
-            "citation_checks": [],
-            "fact_issues": [],
-            "logic_issues": [],
-            "info_gaps": ["证据来源数量不足", "观点覆盖不足"],
-            "score_rationale": {
-                "S1": f"仅有 {n_ctx} 条来源，无法有效核查事实",
-                "S2": "结构待评估",
-                "S3": f"来源数量 {n_ctx} 低于阈值，覆盖面存疑",
-                "S4": "待评估",
+        return _finalize_review(
+            {
+                "scores": scores,
+                "needs_more_research": True,
+                "critique_feedback": "当前证据不足，请补充更多高质量来源并覆盖不同观点。",
+                "citation_checks": [],
+                "fact_issues": [],
+                "logic_issues": [],
+                "info_gaps": ["证据来源数量不足", "观点覆盖不足"],
+                "score_rationale": {
+                    "S1": f"仅有 {n_ctx} 条来源，无法有效核查事实",
+                    "S2": "结构待评估",
+                    "S3": f"来源数量 {n_ctx} 低于阈值，覆盖面存疑",
+                    "S4": "待评估",
+                },
+                "supporter": {"strengths": ["主题聚焦明确"], "supported_claims": []},
+                "skeptic": {
+                    "critical_issues": ["证据来源数量不足，无法支撑关键结论"],
+                    "missing_evidence": ["需要补充多来源检索结果"],
+                },
+                "controversy_points": ["当前结论是否建立在足够证据之上"],
+                "evidence_verdicts": [{
+                    "claim": "已有证据可支撑完整报告",
+                    "status": "unsupported",
+                    "evidence": f"上下文数量 {n_ctx} 低于最低阈值 {MIN_CONTEXT_ITEMS}",
+                    "action": "返回 Researcher 补充检索",
+                }],
             },
-            "supporter": {"strengths": ["主题聚焦明确"], "supported_claims": []},
-            "skeptic": {
-                "critical_issues": ["证据来源数量不足，无法支撑关键结论"],
-                "missing_evidence": ["需要补充多来源检索结果"],
-            },
-            "controversy_points": ["当前结论是否建立在足够证据之上"],
-            "evidence_verdicts": [{
-                "claim": "已有证据可支撑完整报告",
-                "status": "unsupported",
-                "evidence": f"上下文数量 {n_ctx} 低于最低阈值 {MIN_CONTEXT_ITEMS}",
-                "action": "返回 Researcher 补充检索",
-            }],
-            "review_mode": "rule",
-        }
+            mode="rule",
+            degraded=True,
+        )
 
     if draft_len < MIN_DRAFT_LENGTH:
         scores = {"S1": 5, "S2": 3, "S3": 4, "S4": 2}
-        weighted = _compute_weighted_score(scores)
-        return {
+        return _finalize_review(
+            {
+                "scores": scores,
+                "needs_more_research": False,
+                "critique_feedback": (
+                    "草稿深度不足，请增强以下部分："
+                    "方法论细节、关键论据展开、结论可执行性与风险边界。"
+                ),
+                "citation_checks": [],
+                "fact_issues": [],
+                "logic_issues": ["论证展开深度不足", "结论可执行性不够明确"],
+                "info_gaps": [],
+                "score_rationale": {
+                    "S1": "草稿过短，事实核查覆盖有限",
+                    "S2": f"草稿仅 {draft_len} 字，结构不完整",
+                    "S3": "内容过少，覆盖广度无法评估",
+                    "S4": "建议部分缺失或过于简略",
+                },
+                "supporter": {
+                    "strengths": ["已有基础结构与主题相关性"],
+                    "supported_claims": ["草稿具备初步结论框架"],
+                },
+                "skeptic": {
+                    "critical_issues": ["论证展开深度不足"],
+                    "missing_evidence": ["关键论据缺乏细节展开"],
+                },
+                "controversy_points": ["现有文本能否支撑可执行建议"],
+                "evidence_verdicts": [{
+                    "claim": "结论可执行性充分",
+                    "status": "weak",
+                    "evidence": f"草稿仅 {draft_len} 字，缺少实施步骤与风险边界",
+                    "action": "返回 Writer 扩写方法与建议",
+                }],
+            },
+            mode="rule",
+            degraded=True,
+        )
+
+    # 规则达标：给出保守的及格分，是否放行仍由 _finalize_review 按阈值判定
+    scores = {"S1": 7, "S2": 7, "S3": 7, "S4": 7}
+    review = _finalize_review(
+        {
             "scores": scores,
-            "weighted_score": weighted,
-            "is_satisfactory": False,
             "needs_more_research": False,
-            "critique_feedback": (
-                "草稿深度不足，请增强以下部分："
-                "方法论细节、关键论据展开、结论可执行性与风险边界。"
-            ),
             "citation_checks": [],
             "fact_issues": [],
-            "logic_issues": ["论证展开深度不足", "结论可执行性不够明确"],
+            "logic_issues": [],
             "info_gaps": [],
             "score_rationale": {
-                "S1": "草稿过短，事实核查覆盖有限",
-                "S2": f"草稿仅 {draft_len} 字，结构不完整",
-                "S3": "内容过少，覆盖广度无法评估",
-                "S4": "建议部分缺失或过于简略",
+                "S1": "来源数量及草稿长度满足基础要求",
+                "S2": "结构基本完整",
+                "S3": "覆盖面达到规则最低标准",
+                "S4": "建议部分存在",
             },
             "supporter": {
-                "strengths": ["已有基础结构与主题相关性"],
-                "supported_claims": ["草稿具备初步结论框架"],
+                "strengths": ["证据与结论匹配度可接受", "结构完整"],
+                "supported_claims": ["可进入交付阶段"],
             },
-            "skeptic": {
-                "critical_issues": ["论证展开深度不足"],
-                "missing_evidence": ["关键论据缺乏细节展开"],
-            },
-            "controversy_points": ["现有文本能否支撑可执行建议"],
+            "skeptic": {"critical_issues": [], "missing_evidence": []},
+            "controversy_points": [],
             "evidence_verdicts": [{
-                "claim": "结论可执行性充分",
-                "status": "weak",
-                "evidence": f"草稿仅 {draft_len} 字，缺少实施步骤与风险边界",
-                "action": "返回 Writer 扩写方法与建议",
+                "claim": "报告达到可交付标准",
+                "status": "supported",
+                "evidence": "规则评审达标，未发现关键缺口",
+                "action": "结束流程",
             }],
-            "review_mode": "rule",
-        }
+        },
+        mode="rule",
+        degraded=True,
+    )
 
-    # 规则通过：给出保守的及格分
-    scores = {"S1": 7, "S2": 7, "S3": 7, "S4": 7}
-    weighted = _compute_weighted_score(scores)
-    return {
-        "scores": scores,
-        "weighted_score": weighted,
-        "is_satisfactory": True,
-        "needs_more_research": False,
-        "critique_feedback": "草稿通过规则评审，可结束流程。",
-        "citation_checks": [],
-        "fact_issues": [],
-        "logic_issues": [],
-        "info_gaps": [],
-        "score_rationale": {
-            "S1": "来源数量及草稿长度满足基础要求",
-            "S2": "结构基本完整",
-            "S3": "覆盖面达到规则最低标准",
-            "S4": "建议部分存在",
-        },
-        "supporter": {
-            "strengths": ["证据与结论匹配度可接受", "结构完整"],
-            "supported_claims": ["可进入交付阶段"],
-        },
-        "skeptic": {"critical_issues": [], "missing_evidence": []},
-        "controversy_points": [],
-        "evidence_verdicts": [{
-            "claim": "报告达到可交付标准",
-            "status": "supported",
-            "evidence": "规则评审通过，未发现关键缺口",
-            "action": "结束流程",
-        }],
-        "review_mode": "rule",
-    }
+    # 反馈文案必须与实际路由一致：未放行时不能声称"通过"后把任务打回 Writer。
+    if review["is_satisfactory"]:
+        review["critique_feedback"] = "草稿通过规则评审，可结束流程。"
+    else:
+        review["critique_feedback"] = (
+            "LLM 评审不可用，规则评审仅达基础标准"
+            f"（{review['weighted_score']}/{review['pass_threshold']}），"
+            "请继续提升证据密度与论证深度。"
+        )
+    return review
 
 
 def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[str, Any]:
@@ -503,40 +580,22 @@ def _llm_review(
     parsed = _parse_review_json(content)
     d = parsed if isinstance(parsed, dict) else {}
 
-    # ── 提取四维分数 ────────────────────────────────────────────────
+    if d.get("review_mode") == "coerce_fallback":
+        # 语义兜底结果已由 _finalize_review 标记为降级，直接透传；
+        # 若在此按正常 LLM 路径重新收口，降级标记会被覆盖、降级拦截将失效。
+        return d
+
+    # ── 提取四维分数（加权与通过判定统一由 _finalize_review 收口） ──
     raw_scores = d.get("scores", {})
+    if not isinstance(raw_scores, dict):
+        raw_scores = {}
     scores: Dict[str, int] = {}
     for dim in ("S1", "S2", "S3", "S4"):
-        val = raw_scores.get(dim, 0)
-        scores[dim] = max(0, min(10, int(val)))
-
-    # 优先信任模型计算的加权分，同时用本地公式兜底验证
-    local_weighted = _compute_weighted_score(scores)
-    reported_weighted = d.get("weighted_score")
-    if reported_weighted is not None:
-        # 允许模型报告值与本地计算值有 ±0.5 误差，否则以本地计算为准
-        weighted_score = float(reported_weighted)
-        if abs(weighted_score - local_weighted) > 0.5:
-            weighted_score = local_weighted
-    else:
-        weighted_score = local_weighted
-
-    # ── 通过判定（以加权总分为准，忽略模型自报的布尔值） ──────────
-    _pass_threshold = float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
-    is_satisfactory = weighted_score >= _pass_threshold
-
-    # ── 路由判定 ────────────────────────────────────────────────────
-    if is_satisfactory:
-        needs_more_research = False
-    else:
-        # S1 < 5（事实严重问题）或 S3 < 4（覆盖严重不足）→ 回 Researcher
-        needs_more_research = (
-            scores.get("S1", 0) < RESEARCHER_S1_THRESHOLD
-            or scores.get("S3", 0) < RESEARCHER_S3_THRESHOLD
-        )
-        # 允许模型也可以触发 needs_more_research（两者取并集）
-        model_nmr = bool(d.get("needs_more_research", False))
-        needs_more_research = needs_more_research or model_nmr
+        try:
+            val = int(raw_scores.get(dim, 0))
+        except (TypeError, ValueError):
+            val = 0
+        scores[dim] = max(0, min(10, val))
 
     # ── 提取其他字段 ────────────────────────────────────────────────
     citation_checks = d.get("citation_checks", [])
@@ -555,29 +614,31 @@ def _llm_review(
     supporter = d.get("supporter", {})
     skeptic = d.get("skeptic", {})
 
-    return {
-        "scores": scores,
-        "weighted_score": round(weighted_score, 4),
-        "is_satisfactory": is_satisfactory,
-        "needs_more_research": needs_more_research,
-        "critique_feedback": str(d.get("critique_feedback", "请给出更具体的修订建议。")),
-        "citation_checks": citation_checks,
-        "fact_issues": fact_issues,
-        "logic_issues": logic_issues,
-        "info_gaps": info_gaps,
-        "score_rationale": score_rationale,
-        "supporter": {
-            "strengths": _to_issue_list(supporter.get("strengths", []) if isinstance(supporter, dict) else []),
-            "supported_claims": _to_issue_list(supporter.get("supported_claims", []) if isinstance(supporter, dict) else []),
+    return _finalize_review(
+        {
+            "scores": scores,
+            # 模型自报布尔值只作为路由建议，不放行判定仍以加权分为准
+            "needs_more_research": bool(d.get("needs_more_research", False)),
+            "critique_feedback": str(d.get("critique_feedback", "请给出更具体的修订建议。")),
+            "citation_checks": citation_checks,
+            "fact_issues": fact_issues,
+            "logic_issues": logic_issues,
+            "info_gaps": info_gaps,
+            "score_rationale": score_rationale,
+            "supporter": {
+                "strengths": _to_issue_list(supporter.get("strengths", []) if isinstance(supporter, dict) else []),
+                "supported_claims": _to_issue_list(supporter.get("supported_claims", []) if isinstance(supporter, dict) else []),
+            },
+            "skeptic": {
+                "critical_issues": _to_issue_list(skeptic.get("critical_issues", []) if isinstance(skeptic, dict) else []),
+                "missing_evidence": _to_issue_list(skeptic.get("missing_evidence", []) if isinstance(skeptic, dict) else []),
+            },
+            "controversy_points": controversy_points,
+            "evidence_verdicts": evidence_verdicts,
         },
-        "skeptic": {
-            "critical_issues": _to_issue_list(skeptic.get("critical_issues", []) if isinstance(skeptic, dict) else []),
-            "missing_evidence": _to_issue_list(skeptic.get("missing_evidence", []) if isinstance(skeptic, dict) else []),
-        },
-        "controversy_points": controversy_points,
-        "evidence_verdicts": evidence_verdicts,
-        "review_mode": "llm_scored",
-    }
+        mode="llm_scored",
+        degraded=False,
+    )
 
 
 def reviewer_node(state: ResearchState) -> Dict[str, Any]:
@@ -588,7 +649,9 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     2) S2 逻辑完整性（权重 25%）
     3) S3 信息覆盖广度（权重 25%）
     4) S4 结论可执行性（权重 15%）
-    加权总分 ≥ PASS_THRESHOLD(默认7.0) 才通过。
+    通过判定统一由 _finalize_review 收口：加权总分 ≥ REVIEWER_PASS_THRESHOLD
+    （默认 7.5）且非降级评审才通过；降级路径默认不放行
+    （REVIEWER_ALLOW_DEGRADED_PASS=1 可显式放宽，但会打降级标记）。
     """
 
     revision_step = state.get("revision_step", 0) + 1
@@ -604,6 +667,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         errors = _append_error(errors, "draft 字段类型异常，Reviewer 已按空文本处理。")
         draft = ""
 
+    llm_error: Optional[str] = None
     try:
         review = _llm_review(
             topic=state.get("topic", ""),
@@ -614,8 +678,18 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             reasoning_enabled=reasoning_enabled,
         )
     except Exception as exc:
+        llm_error = str(exc)
         errors = _append_error(errors, f"Reviewer LLM 评审失败，已回退规则评审: {exc}")
         review = _rule_based_review(draft=draft, retrieved_context=retrieved_context)
+
+    review_mode = str(review.get("review_mode", "rule"))
+    degraded = bool(review.get("degraded", False))
+    if degraded and llm_error is None:
+        # LLM 调用成功但输出无法解析为结构化 JSON（语义兜底路径）：静默降级需显式记录
+        errors = _append_error(
+            errors,
+            "Reviewer 输出未能解析为结构化 JSON，已启用语义兜底解析（本轮为降级评审）。",
+        )
 
     is_satisfactory = bool(review.get("is_satisfactory", False))
     needs_more_research = bool(review.get("needs_more_research", False))
@@ -629,18 +703,21 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
 
     scores = review.get("scores", {})
     weighted_score = review.get("weighted_score", 0.0)
+    pass_threshold = review.get("pass_threshold", _resolve_pass_threshold())
+    degraded_blocked = bool(review.get("degraded_blocked", False))
 
-    _pass_threshold = float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
     trace = list(state.get("execution_trace", []))
     trace.append(
         {
             "node": "reviewer",
             "revision_step": revision_step,
-            "mode": review.get("review_mode", "rule"),
+            "mode": review_mode,
             "scores": scores,
             "weighted_score": weighted_score,
-            "pass_threshold": _pass_threshold,
+            "pass_threshold": pass_threshold,
             "is_satisfactory": is_satisfactory,
+            "degraded": degraded,
+            "degraded_blocked": degraded_blocked,
             "next_route": next_route,
             "fact_issues": len(review.get("fact_issues", [])),
             "logic_issues": len(review.get("logic_issues", [])),
@@ -666,6 +743,17 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         }
     )
 
+    # ── 评审模式统计与降级轮次（跨轮累积，供报告与调试导出） ──────────
+    stats: Dict[str, Any] = dict(state.get("review_stats", {}) or {})
+    stats["rounds_total"] = int(stats.get("rounds_total", 0)) + 1
+    stats[review_mode] = int(stats.get(review_mode, 0)) + 1
+    if degraded:
+        stats["degraded_rounds"] = int(stats.get("degraded_rounds", 0)) + 1
+
+    degraded_rounds = list(state.get("review_degraded_rounds", []) or [])
+    if degraded:
+        degraded_rounds.append(revision_step)
+
     result: Dict[str, Any] = {
         "revision_step": revision_step,
         "is_satisfactory": is_satisfactory,
@@ -677,8 +765,18 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         "errors": errors,
         "execution_trace": trace,
         "iteration_history": history,
+        "review_stats": stats,
+        "review_degraded_rounds": degraded_rounds,
     }
     if is_satisfactory:
-        result["final_report"] = draft
+        report = draft
+        if degraded:
+            # 降级放行（REVIEWER_ALLOW_DEGRADED_PASS=1）时必须在报告中留痕
+            report = (
+                f"{draft}\n\n---\n"
+                f"> ⚠️ 本轮评审为降级模式（{review_mode}）：LLM 结构化评审不可用，"
+                f"通过判定基于保守标准（加权分 {weighted_score}，阈值 {pass_threshold}）。"
+            )
+        result["final_report"] = report
     return result
 

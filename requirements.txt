@@ -10,3 +10,6 @@ openai>=1.0.0
 streamlit>=1.28.0
 tenacity>=8.0.0
 datasets>=2.14.0
+
+# 测试（开发依赖）
+pytest>=8.0

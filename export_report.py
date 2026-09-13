@@ -169,9 +169,18 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append(f"- 是否通过评审: {state.get('is_satisfactory', False)}")
     lines.append(f"- 下一路由建议: {state.get('next_route', '')}")
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
+    review_stats = state.get("review_stats", {}) or {}
+    if review_stats:
+        lines.append(f"- 评审模式统计: {review_stats}")
+    degraded_rounds = state.get("review_degraded_rounds", []) or []
+    if degraded_rounds:
+        lines.append(f"- 降级评审轮次: {degraded_rounds}")
+    if review.get("degraded"):
+        lines.append("- 本轮评审降级: 是（LLM 结构化评审不可用，已按保守标准判定）")
     weighted = review.get("weighted_score")
     if weighted is not None:
-        lines.append(f"- 评审加权总分: {weighted:.2f} / 10.00（通过阈值 8.0）")
+        pass_threshold = review.get("pass_threshold", "N/A")
+        lines.append(f"- 评审加权总分: {weighted:.2f} / 10.00（通过阈值 {pass_threshold}）")
         scores = review.get("scores", {})
         if scores:
             lines.append(
@@ -231,7 +240,8 @@ def _render_markdown_debug(state: ResearchState) -> str:
             contrib = round(float(s) * w, 2) if isinstance(s, (int, float)) else "?"
             rationale = str(score_rationale.get(dim, "")).replace("|", "｜")[:60]
             lines.append(f"| {dim} {label} | {s}/10 | {int(w*100)}% | {contrib} | {rationale} |")
-        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: 8.0 |" if weighted is not None else "")
+        pass_threshold = review.get("pass_threshold", "N/A")
+        lines.append(f"| **加权总分** | **{weighted:.2f}/10** | 100% | — | 通过阈值: {pass_threshold} |" if weighted is not None else "")
         verdict = "✅ 通过" if review.get("is_satisfactory") else "❌ 未通过"
         lines.append(f"| **评审结论** | {verdict} | — | — | — |")
         lines.append("")
@@ -347,6 +357,9 @@ def _render_markdown_debug(state: ResearchState) -> str:
                 f"(S1={r_scores.get('S1','?')} S2={r_scores.get('S2','?')} "
                 f"S3={r_scores.get('S3','?')} S4={r_scores.get('S4','?')})"
             )
+        r_mode = review_item.get("review_mode", "unknown")
+        r_degraded = bool(review_item.get("degraded", False))
+        lines.append(f"  - 评审模式: {r_mode}" + ("（降级评审）" if r_degraded else ""))
         lines.append(f"  - next_route: {item.get('next_route', '')}")
         lines.append(f"  - critique_feedback: {review_item.get('critique_feedback', '')}")
         lines.append("")

@@ -59,6 +59,10 @@ class ResearchState(ResearchStateCore, total=False):
     reasoning_summary: str
     # 标记本轮是否启用了IRCoT推理链
     reasoning_enabled: bool
+    # Reviewer 评审模式统计（llm_scored / coerce_fallback / rule / degraded_rounds）
+    review_stats: Dict[str, Any]
+    # 发生降级评审的轮次列表（revision_step），用于报告标注与调试
+    review_degraded_rounds: List[int]
 
 
 def create_initial_state(
@@ -92,6 +96,8 @@ def create_initial_state(
         "reasoning_contexts": [],
         "reasoning_summary": "",
         "reasoning_enabled": False,
+        "review_stats": {},
+        "review_degraded_rounds": [],
     }
 
 

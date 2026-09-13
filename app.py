@@ -1080,6 +1080,15 @@ try:
                     else:
                         st.error("❌ 评审未通过，系统将根据反馈继续优化。")
 
+                    # 降级评审提示：LLM 结构化评审不可用时不得静默放行
+                    _degraded_review: dict = full_state.get("review_result", {}) or {}
+                    if _degraded_review.get("degraded"):
+                        st.warning(
+                            "⚠️ 本轮为降级评审"
+                            f"（{_degraded_review.get('review_mode', 'unknown')}）："
+                            "LLM 结构化评审不可用，通过判定基于保守标准。"
+                        )
+
                     # 四维评分 + 加权总分 vs 阈值
                     # review_result 结构：{"scores": {"S1": N, ...}, "weighted_score": N, ...}
                     review_result: dict = full_state.get("review_result", {})
