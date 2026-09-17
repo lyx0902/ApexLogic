@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-import os
+from core.run_config import setting
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
@@ -175,7 +175,7 @@ def retrieve_top_k(
             "selected": 0,
         }
 
-    enabled = os.getenv("BGE_RETRIEVER_ENABLED", "1").strip() == "1"
+    enabled = setting("BGE_RETRIEVER_ENABLED", "1").strip() == "1"
     if not enabled:
         scored_items = [dict(item) for item in candidates]
         selected = scored_items[: max(top_k, 0)]
@@ -191,11 +191,11 @@ def retrieve_top_k(
             **rank_pack,
         }
 
-    api_key = os.getenv("BGE_EMBED_API_KEY", "").strip()
-    api_base = os.getenv("BGE_EMBED_BASE_URL", "https://api.siliconflow.cn/v1").strip()
-    model = os.getenv("BGE_EMBED_MODEL", "BAAI/bge-m3").strip()
-    timeout_sec = float(os.getenv("BGE_EMBED_TIMEOUT", "20"))
-    batch_size = max(int(os.getenv("BGE_EMBED_BATCH_SIZE", "32")), 1)
+    api_key = setting("BGE_EMBED_API_KEY", "").strip()
+    api_base = setting("BGE_EMBED_BASE_URL", "https://api.siliconflow.cn/v1").strip()
+    model = setting("BGE_EMBED_MODEL", "BAAI/bge-m3").strip()
+    timeout_sec = float(setting("BGE_EMBED_TIMEOUT", "20"))
+    batch_size = max(int(setting("BGE_EMBED_BATCH_SIZE", "32")), 1)
 
     query_text = topic
     if queries:

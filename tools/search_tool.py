@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from core.run_config import setting
 import re
 from typing import Any, Dict, List
 
@@ -83,7 +83,7 @@ def tavily_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
     if TavilyClient is None:
         raise RuntimeError("Tavily SDK 未安装，请先安装 tavily-python。")
 
-    api_key = os.getenv("TAVILY_API_KEY", "")
+    api_key = setting("TAVILY_API_KEY", "")
     if not api_key:
         raise RuntimeError("未检测到 TAVILY_API_KEY。")
 
@@ -128,7 +128,7 @@ def unified_search(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
         except Exception as exc:
             provider_errors.append(f"{func.__name__} failed: {exc}")
 
-    use_tavily = os.getenv("ENABLE_TAVILY_FALLBACK", "0").strip() == "1"
+    use_tavily = setting("ENABLE_TAVILY_FALLBACK", "0").strip() == "1"
     if use_tavily:
         try:
             merged.extend(tavily_search(query, max_results=max(2, max_results // 3)))

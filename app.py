@@ -4,6 +4,9 @@ ApexLogic 深度研究引擎 — Streamlit 可视化界面
 
 from __future__ import annotations
 
+from contextlib import closing
+from itertools import chain
+
 from dotenv import load_dotenv
 load_dotenv()  # 必须在任何读取 os.getenv 的模块导入前执行
 
@@ -13,10 +16,12 @@ import re
 import traceback
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 
 from export_report import _inject_citation_hyperlinks
+from core.runner import ResearchRunner
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -68,7 +73,7 @@ code {
 )
 
 # ── 常量 ───────────────────────────────────────────────────────────────────────
-APPSTATS_DIR = Path("appstats")
+APPSTATS_DIR = Path(os.getenv("APEXLOGIC_HISTORY_DIR") or Path(__file__).resolve().parent / "appstats")
 
 # ── 通用辅助函数 ───────────────────────────────────────────────────────────────
 
@@ -78,22 +83,6 @@ def extract_think(text: str) -> tuple[list[str], str]:
     thinks = pattern.findall(text)
     clean = pattern.sub("", text).strip()
     return thinks, clean
-
-
-def detect_node(full: dict, prev: dict) -> str:
-    """通过比对两次全量 State 快照推断刚完成的节点名称。
-
-    优先级：
-      1. revision_step 增大 → reviewer（唯一递增该字段的节点）
-      2. draft 变化（非空）  → writer（唯一修改该字段的节点）
-      3. 其余默认            → researcher
-    """
-    if full.get("revision_step", 0) > prev.get("revision_step", 0):
-        return "reviewer"
-    curr_draft = full.get("draft", "")
-    if curr_draft and curr_draft != prev.get("draft", ""):
-        return "writer"
-    return "researcher"
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -191,18 +180,28 @@ def save_run_to_history(
     final_state: dict,
     elapsed_seconds: float,
     iteration_snapshots: list | None = None,
+    completed_at: str | None = None,
 ) -> None:
     """将本次研究结果序列化到 appstats/ 目录中。"""
-    APPSTATS_DIR.mkdir(exist_ok=True)
+    APPSTATS_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now()
     safe_topic = re.sub(r"[^\w\u4e00-\u9fff]", "_", topic)[:20]
-    filename = APPSTATS_DIR / f"run_{ts.strftime('%Y%m%d_%H%M%S')}_{safe_topic}.json"
+    run_id = final_state.get("run_id")
+    filename = APPSTATS_DIR / (f"run_{run_id}.json" if run_id else f"run_{ts.strftime('%Y%m%d_%H%M%S')}_{safe_topic}.json")
 
+    # Reopening a completed task must not change its historical completion time.
+    if filename.exists():
+        previous = json.loads(filename.read_text(encoding="utf-8"))
+        timestamp = previous.get("timestamp") or completed_at or ts.isoformat()
+    else:
+        timestamp = completed_at or ts.isoformat()
     review_result = final_state.get("review_result", {})
     contexts = final_state.get("retrieved_context", [])[:10]
 
     record = {
-        "timestamp": ts.isoformat(),
+        "run_id": run_id,
+        "timestamp": timestamp,
+        "completed_at": completed_at,
         "topic": topic,
         "max_revisions": max_revisions,
         "pass_threshold": pass_threshold,
@@ -268,8 +267,10 @@ def save_run_to_history(
         },
     }
 
-    with open(filename, "w", encoding="utf-8") as f:
+    temp_path = filename.with_suffix(f".{uuid4().hex}.tmp")
+    with open(temp_path, "w", encoding="utf-8") as f:
         json.dump(record, f, ensure_ascii=False, indent=2)
+    temp_path.replace(filename)
 
 
 def load_history_list() -> list[dict]:
@@ -292,7 +293,7 @@ def _history_label(record: dict) -> str:
     """生成历史记录的侧边栏展示标签。"""
     data = record["data"]
     try:
-        ts = datetime.fromisoformat(data["timestamp"]).strftime("%m-%d %H:%M")
+        ts = datetime.fromisoformat(data["timestamp"]).astimezone().strftime("%m-%d %H:%M")
     except Exception:
         ts = "??-??"
     topic_short = data["topic"][:14] + ("…" if len(data["topic"]) > 14 else "")
@@ -305,7 +306,7 @@ def show_history_view(data: dict) -> None:
     """在主区域渲染历史记录详情。"""
     ts_str = ""
     try:
-        ts_str = datetime.fromisoformat(data["timestamp"]).strftime("%Y-%m-%d %H:%M")
+        ts_str = datetime.fromisoformat(data["timestamp"]).astimezone().strftime("%Y-%m-%d %H:%M")
     except Exception:
         pass
 
@@ -622,7 +623,7 @@ def show_history_view(data: dict) -> None:
                     if h_is_ok:
                         st.success("✅ 评审通过！报告质量达标。")
                     else:
-                        st.error("❌ 评审未通过，系统继续优化。")
+                        st.warning("本轮评审未通过，修订意见已记录。")
 
                     h_review: dict = snap.get("review_result", {}) or {}
                     h_scores: dict = h_review.get("scores", {})
@@ -679,6 +680,14 @@ if "history_data" not in st.session_state:
 
 # 提前加载历史列表（侧边栏和欢迎页均需要）
 history_list = load_history_list()
+try:
+    runner = ResearchRunner()
+    run_list = runner.repository.list()
+except Exception as exc:
+    st.error(f"无法打开任务存储：{exc}")
+    st.stop()
+resume_run_id = None
+inspect_run_id = None
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
@@ -700,6 +709,20 @@ with st.sidebar:
         use_container_width=True,
         disabled=not topic.strip(),
     )
+
+    if run_list:
+        st.markdown("---")
+        st.markdown("**研究任务 · 断点恢复**")
+        by_id = {r["run_id"]: r for r in run_list}
+        selected_run = st.selectbox("选择研究任务", [None] + list(by_id),
+            format_func=lambda key: "— 选择任务 —" if key is None else
+                f"{by_id[key]['topic'][:24]} · {by_id[key]['status']} · {key[:8]}")
+        if selected_run:
+            if st.button("查看任务状态 / 已有结果"):
+                inspect_run_id = selected_run
+            if st.button("继续研究 / 打开完成结果"):
+                resume_run_id = selected_run
+        st.caption("列表为最近记录；查看任务可核对进度。恢复沿用任务原配置。")
 
     # ── 历史记录区 ──────────────────────────────────────────────────────────────
     if history_list:
@@ -742,7 +765,31 @@ st.markdown("---")
 
 
 # ── 历史记录浏览模式（优先于新研究，但 start_btn 可覆盖）────────────────────────
-if st.session_state.view_history and not start_btn:
+if inspect_run_id and not start_btn and not resume_run_id:
+    try:
+        info = runner.inspect(inspect_run_id)
+        item = info["record"]
+        st.subheader(item["topic"])
+        st.code(item["run_id"])
+        st.write("状态：", "正在执行" if info["running"] else item["status"])
+        st.write("待执行节点：", info["next"] or "无")
+        st.write("最近保存：", info["saved_at"] or "尚未开始")
+        st.write("完成时间：", info["record"].get("completed_at") or "尚未完成")
+        if item.get("last_error"):
+            st.warning(item["last_error"])
+        if item.get("termination_reason") == "max_revisions":
+            st.warning("研究已结束，但未达到评审质量阈值。")
+        saved = info["state"]
+        if saved.get("draft"):
+            st.markdown(_inject_citation_hyperlinks(saved.get("final_report") or saved["draft"],
+                saved.get("retrieved_context", []), saved.get("reasoning_contexts", [])))
+        with st.expander("执行尝试与已保存轨迹"):
+            st.json({"attempts": info["attempts"], "trace": saved.get("execution_trace", [])})
+    except Exception as exc:
+        st.error(f"读取任务失败：{exc}")
+    st.stop()
+
+if st.session_state.view_history and not start_btn and not resume_run_id:
     if st.session_state.history_data:
         show_history_view(st.session_state.history_data)
     else:
@@ -751,7 +798,7 @@ if st.session_state.view_history and not start_btn:
 
 
 # ── 欢迎界面（未启动研究时）───────────────────────────────────────────────────────
-if not start_btn:
+if not start_btn and not resume_run_id:
     st.info(
         "👈 请在左侧侧边栏输入研究主题并点击「🚀 开始深度研究」，"
         "系统将自动启动多智能体深度研究流程并在此实时展示执行过程。"
@@ -761,7 +808,7 @@ if not start_btn:
     st.stop()
 
 # 主题为空保险检查
-if not topic.strip():
+if not resume_run_id and not topic.strip():
     st.warning("⚠️ 研究主题不能为空，请在侧边栏输入主题后重试。")
     st.stop()
 
@@ -772,11 +819,27 @@ st.session_state.history_data = None
 
 # ── 导入核心模块 ───────────────────────────────────────────────────────────────
 try:
-    from core.graph import compile_graph
-    from core.state import create_initial_state
-except ImportError as exc:
-    st.error(f"❌ 核心模块导入失败，请确认依赖已安装：{exc}")
+    if resume_run_id and not start_btn:
+        run_id = resume_run_id
+        info = runner.inspect(run_id)
+        if info["running"]:
+            st.info("任务仍在其他窗口或进程执行，请稍后查看状态。")
+            st.stop()
+        run_record = info["record"]
+    else:
+        run_record = runner.create(topic, max_revisions=max_revisions,
+                                   pass_threshold=pass_threshold, output_mode="user")
+        run_id = run_record["run_id"]
+    st.session_state.active_run_id = run_id
+    topic = run_record["topic"]
+    max_revisions = int(run_record["run_config"]["settings"]["MAX_REVISIONS"])
+    pass_threshold = float(run_record["run_config"]["settings"]["REVIEWER_PASS_THRESHOLD"])
+    prior_events = runner.history(run_id)
+except Exception as exc:
+    st.error(f"❌ 无法创建或恢复任务：{exc}")
     st.stop()
+
+st.caption(f"任务 ID：{run_id}。进度保存在本地，重启后可从侧边栏继续。")
 
 
 # ── 运行参数概览（研究主题单行 + 4 列其余参数）──────────
@@ -791,29 +854,13 @@ timer_placeholder = c4.empty()
 st.markdown("---")
 
 
-# ── 编译图 & 构建初始状态 ───────────────────────────────────────────────────────
-# 将用户设置的通过阈值写入环境变量，reviewer_node 运行时会动态读取
-os.environ["REVIEWER_PASS_THRESHOLD"] = str(pass_threshold)
-try:
-    graph = compile_graph(max_revisions)
-    # output_mode="user" 保证最终报告干净；过程数据仍在 state 各字段中
-    initial_state = create_initial_state(topic, output_mode="user")
-except Exception as exc:
-    st.error(f"❌ 图编译失败：{exc}")
-    with st.expander("错误详情"):
-        st.code(traceback.format_exc(), language="python")
-    st.stop()
-
-
 # ── 状态占位符 ─────────────────────────────────────────────────────────────────
 status_placeholder = st.empty()
 status_placeholder.info("🚀 引擎启动，多智能体流水线正在初始化……")
 
 
 # ── 主流式循环 ─────────────────────────────────────────────────────────────────
-prev_state: dict = {}
-final_state: dict = dict(initial_state)
-researcher_first_seen = False
+final_state: dict = {}
 iteration_snapshots: list = []
 
 # 计时器：在 graph.stream() 启动前精确计时，与页面加载耗时解耦
@@ -821,25 +868,19 @@ run_start_time = datetime.now()
 render_live_timer(timer_placeholder, run_start_time)
 
 try:
-    with st.spinner("🤖 正在思考与执行中，请耐心等待……"):
-
-        # stream_mode="values"：LangGraph 内部 Reducer 合并 List 字段，
-        # 每次 yield 为最新完整 State，无需手动 update()
-        for full_state in graph.stream(initial_state, stream_mode="values"):
-            node = detect_node(full_state, prev_state)
+    with st.spinner("🤖 正在思考与执行中，请耐心等待……"), closing(runner.stream(run_id)) as live_events:
+        if prior_events:
+            st.caption("以下先展示已保存的执行过程，再继续未完成节点。")
+        for event in chain(prior_events, live_events):
+            full_state = event.state
             final_state = dict(full_state)
+            if event.kind == "complete":
+                continue
+            node = event.node
 
             # ── Researcher ────────────────────────────────────────────────────
             if node == "researcher":
                 current_iteration = full_state.get("revision_step", 0) + 1
-                if not researcher_first_seen:
-                    researcher_first_seen = True
-                    status_placeholder.info(
-                        f"🔍 第 {current_iteration} 轮 · Researcher 正在检索……"
-                    )
-                    prev_state = dict(full_state)
-                    continue
-
                 if current_iteration > 1:
                     st.markdown("---")
                 status_placeholder.info(
@@ -1078,7 +1119,7 @@ try:
                     if is_ok:
                         st.success("✅ 评审通过！报告质量达标，即将输出最终报告。")
                     else:
-                        st.error("❌ 评审未通过，系统将根据反馈继续优化。")
+                        st.warning("本轮评审未通过，修订意见已记录。")
 
                     # 降级评审提示：LLM 结构化评审不可用时不得静默放行
                     _degraded_review: dict = full_state.get("review_result", {}) or {}
@@ -1146,13 +1187,15 @@ try:
                     "is_satisfactory": bool(full_state.get("is_satisfactory", False)),
                 })
 
-            prev_state = dict(full_state)
-
-    status_placeholder.success("✅ 运行结束！所有智能体节点执行完毕。")
+    if final_state.get("is_satisfactory"):
+        status_placeholder.success("✅ 研究完成，报告已通过评审。")
+    else:
+        status_placeholder.warning("研究已结束，但未达到评审质量阈值。")
 
 except Exception as exc:
     status_placeholder.error(f"❌ 流程异常中断：{exc}")
     st.error(f"运行出错：{exc}")
+    st.info(f"任务 {run_id} 已保留已提交的进度，可在侧边栏选择后继续研究。")
     with st.expander("📋 错误详情", expanded=True):
         st.code(traceback.format_exc(), language="python")
     st.stop()
@@ -1161,13 +1204,17 @@ except Exception as exc:
 # ── 计时器：更新运行总时长 ──────────────────────────────────────────────────────
 elapsed_seconds = (datetime.now() - run_start_time).total_seconds()
 render_live_timer(timer_placeholder, run_start_time, stop_seconds=elapsed_seconds)
+attempts = runner.repository.attempts(run_id)
+known_seconds = sum(a["elapsed_seconds"] or 0 for a in attempts)
+st.caption(f"已记录执行时间：{known_seconds:.1f} 秒；执行尝试：{len(attempts)} 次。强制退出的未记录时长不计入。")
 
 
 # ── 保存历史记录（失败不中断主流程）──────────────────────────────────────────────
 try:
-    save_run_to_history(topic, max_revisions, pass_threshold, final_state, elapsed_seconds, iteration_snapshots)
-except Exception:
-    pass
+    save_run_to_history(topic, max_revisions, pass_threshold, final_state, known_seconds, iteration_snapshots,
+                        completed_at=runner.repository.get(run_id)["completed_at"])
+except Exception as exc:
+    st.warning(f"历史 JSON 导出失败，checkpoint 中的研究结果仍可读取：{exc}")
 
 
 # ── 运行期警告 ────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from core.run_config import setting
 from typing import Any, Dict, List, Tuple
 
 import requests
@@ -108,7 +108,7 @@ def rerank_top_k(
             "selected": 0,
         }
 
-    enabled = os.getenv("BGE_RERANKER_ENABLED", "1").strip() == "1"
+    enabled = setting("BGE_RERANKER_ENABLED", "1").strip() == "1"
     if not enabled:
         ranked_items = [dict(item) for item in candidates]
         selected = ranked_items[: max(top_k, 0)]
@@ -124,10 +124,10 @@ def rerank_top_k(
             **rank_pack,
         }
 
-    api_key = os.getenv("BGE_RERANK_API_KEY", os.getenv("BGE_EMBED_API_KEY", "")).strip()
-    api_base = os.getenv("BGE_RERANK_BASE_URL", "https://api.siliconflow.cn/v1").strip()
-    model = os.getenv("BGE_RERANK_MODEL", "BAAI/bge-reranker-v2-m3").strip()
-    timeout_sec = float(os.getenv("BGE_RERANK_TIMEOUT", "25"))
+    api_key = setting("BGE_RERANK_API_KEY", setting("BGE_EMBED_API_KEY", "")).strip()
+    api_base = setting("BGE_RERANK_BASE_URL", "https://api.siliconflow.cn/v1").strip()
+    model = setting("BGE_RERANK_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    timeout_sec = float(setting("BGE_RERANK_TIMEOUT", "25"))
 
     if not api_key:
         # 无密钥时按 Retriever 分数回退。

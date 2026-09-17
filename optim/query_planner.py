@@ -31,7 +31,7 @@ AQD_RESULTS_PER_SUBQ  (默认 "3") – 每个子问题的 DDG 检索结果数
 from __future__ import annotations
 
 import json
-import os
+from core.run_config import setting
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -238,10 +238,10 @@ class AdaptiveQueryPlanner:
         results_per_subq: int = 3,
     ) -> None:
         self.max_sub_questions = int(
-            os.getenv("AQD_MAX_SUB_QUESTIONS", str(max_sub_questions))
+            setting("AQD_MAX_SUB_QUESTIONS", str(max_sub_questions))
         )
         self.results_per_subq = int(
-            os.getenv("AQD_RESULTS_PER_SUBQ", str(results_per_subq))
+            setting("AQD_RESULTS_PER_SUBQ", str(results_per_subq))
         )
 
     # ── 内部：LLM 实例化 ──────────────────────────────────────────────
@@ -250,11 +250,11 @@ class AdaptiveQueryPlanner:
         """从环境变量构建 DeepSeek LLM 实例。失败返回 None。"""
         if not _LANGCHAIN_AVAILABLE or ChatOpenAI is None:
             return None
-        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        api_key = setting("DEEPSEEK_API_KEY", "").strip()
         if not api_key:
             return None
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        base_url = setting("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+        model = setting("DEEPSEEK_MODEL", "deepseek-chat")
         try:
             return ChatOpenAI(
                 model=model,

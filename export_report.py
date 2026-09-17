@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 from typing import Dict, List
 
 from dotenv import load_dotenv
 
-from core.graph import compile_graph
-from core.state import ResearchState, create_initial_state
+from core.state import ResearchState
 
 
 def _inject_citation_hyperlinks(
@@ -54,11 +53,13 @@ def parse_args() -> argparse.Namespace:
     """解析导出脚本参数。"""
 
     parser = argparse.ArgumentParser(description="Export deep research report to markdown")
-    parser.add_argument(
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
         "--topic",
-        required=True,
         help="研究主题",
     )
+    source.add_argument("--run-id", help="从已完成任务导出，不调用模型")
+    parser.add_argument("--data-dir", default=None, help="任务持久化目录")
     parser.add_argument(
         "--max-revisions",
         type=int,
@@ -79,7 +80,10 @@ def parse_args() -> argparse.Namespace:
             "both=单次运行同时导出两版，user_only=运行完整流程但仅导出用户版"
         ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.run_id and args.max_revisions is not None:
+        parser.error("导出已有任务不能修改研究轮数")
+    return args
 
 
 def _safe_filename(text: str) -> str:
@@ -639,7 +643,7 @@ def _render_markdown_debug(state: ResearchState) -> str:
 def _build_output_paths(output: str | None, topic: str, mode: str) -> List[Path]:
     """根据导出模式生成输出路径列表。"""
 
-    reports_dir = Path("reports")
+    reports_dir = Path(__file__).resolve().parent / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     if output:
@@ -651,6 +655,7 @@ def _build_output_paths(output: str | None, topic: str, mode: str) -> List[Path]
     stem = base_path.stem
     suffix = base_path.suffix or ".md"
     parent = base_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
 
     if mode == "both":
         return [
@@ -786,6 +791,7 @@ def run_and_export(
     max_revisions: int | None,
     output: str | None,
     output_mode: str,
+    data_dir=None,
 ) -> List[str]:
     """执行图并导出 markdown 报告，返回输出路径列表。"""
 
@@ -793,19 +799,42 @@ def run_and_export(
     if not env_loaded:
         load_dotenv(".env.example")
 
-    actual_max_revisions = max_revisions
-    if actual_max_revisions is None:
-        actual_max_revisions = int(os.getenv("MAX_REVISIONS", "3"))
+    from core.runner import ResearchRunner
+    runner = ResearchRunner(data_dir)
+    record = runner.create(topic, max_revisions=max_revisions, output_mode="debug")
+    print(f"[RUN] run_id={record['run_id']}", flush=True)
+    runner.run(record["run_id"])
+    return export_saved_run(record["run_id"], output=output, output_mode=output_mode, data_dir=runner.data_dir)
 
-    app = compile_graph(max_revisions=actual_max_revisions)
+
+def export_saved_run(run_id: str, *, output=None, output_mode="both", data_dir=None) -> List[str]:
+    from core.runner import ResearchRunner
+    runner = ResearchRunner(data_dir)
+    state = runner.completed_state(run_id)
+    if output is None:
+        output = str(Path(__file__).resolve().parent / "reports" / f"run_{run_id}.md")
+    try:
+        paths = export_state(state, output=output, output_mode=output_mode)
+    except Exception:
+        runner.repository.update(run_id, export_status="failed")
+        raise
+    runner.repository.update(run_id, export_status="completed")
+    return paths
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    temporary = path.with_suffix(f".{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(content, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def export_state(state: ResearchState, *, output=None, output_mode="both") -> List[str]:
+    """Pure report rendering/export; never executes the research graph."""
     normalized_mode = output_mode if output_mode in {"user", "debug", "both", "user_only"} else "both"
-
-    initial_state = create_initial_state(
-        topic=topic,
-        # 运行时统一按 debug 状态记录，导出层再决定展示与落盘。
-        output_mode="debug",
-    )
-    state: ResearchState = app.invoke(initial_state)
+    topic = state.get("topic", "research")
 
     outputs = _render_by_mode(state, normalized_mode)
     paths = _build_output_paths(output=output, topic=topic, mode=normalized_mode)
@@ -813,29 +842,28 @@ def run_and_export(
     saved_paths: List[str] = []
     if normalized_mode == "both":
         user_path, debug_path = paths
-        user_path.write_text(outputs["user"], encoding="utf-8")
-        debug_path.write_text(outputs["debug"], encoding="utf-8")
+        _atomic_write(user_path, outputs["user"])
+        _atomic_write(debug_path, outputs["debug"])
         bge_json_path = user_path.parent / f"{user_path.stem.rsplit('-user', 1)[0]}-bge-details.json"
         bge_payload = _build_bge_details_payload(state)
-        bge_json_path.write_text(json.dumps(bge_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        _atomic_write(bge_json_path, json.dumps(bge_payload, ensure_ascii=False, indent=2))
         saved_paths.extend([str(user_path), str(debug_path), str(bge_json_path)])
     else:
         path = paths[0]
         key = "debug" if normalized_mode == "debug" else "user"
-        path.write_text(outputs[key], encoding="utf-8")
+        _atomic_write(path, outputs[key])
         saved_paths.append(str(path))
 
     return saved_paths
 
 
 if __name__ == "__main__":
+    load_dotenv()
     args = parse_args()
-    paths = run_and_export(
-        topic=args.topic,
-        max_revisions=args.max_revisions,
-        output=args.output,
-        output_mode=args.output_mode,
-    )
+    if args.run_id:
+        paths = export_saved_run(args.run_id, output=args.output, output_mode=args.output_mode, data_dir=args.data_dir)
+    else:
+        paths = run_and_export(topic=args.topic, max_revisions=args.max_revisions,
+                              output=args.output, output_mode=args.output_mode, data_dir=args.data_dir)
     for path in paths:
         print(f"[EXPORT] report saved: {path}")
-

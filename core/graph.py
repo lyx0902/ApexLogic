@@ -29,7 +29,7 @@ ROUTE_RESEARCHER = NODE_RESEARCHER
 ROUTE_WRITER = NODE_WRITER
 
 
-def _load_agent_node(module_path: str, attr_name: str, fallback: Callable[[ResearchState], Dict[str, Any]]) -> Callable[[ResearchState], Dict[str, Any]]:
+def _load_agent_node(module_path: str, attr_name: str, fallback: Callable[[ResearchState], Dict[str, Any]], *, strict: bool = False) -> Callable[[ResearchState], Dict[str, Any]]:
     """优先加载 agents 目录中的真实节点，失败时回退到本地占位实现。"""
 
     try:
@@ -37,8 +37,11 @@ def _load_agent_node(module_path: str, attr_name: str, fallback: Callable[[Resea
         candidate = getattr(module, attr_name, None)
         if callable(candidate):
             return candidate
-    except Exception:
-        pass
+        if strict:
+            raise RuntimeError(f"缺少 Agent 节点: {module_path}.{attr_name}")
+    except Exception as exc:
+        if strict:
+            raise RuntimeError(f"无法加载 Agent: {module_path}.{attr_name}") from exc
     return fallback
 
 
@@ -146,7 +149,7 @@ def reviewer_route(state: ResearchState, max_revisions: int = MAX_REVISIONS) -> 
     return ROUTE_WRITER
 
 
-def compile_graph(max_revisions: int = MAX_REVISIONS):
+def compile_graph(max_revisions: int = MAX_REVISIONS, *, checkpointer=None, strict: bool = False):
     """构建并编译循环状态图。"""
 
     if StateGraph is None:
@@ -155,11 +158,11 @@ def compile_graph(max_revisions: int = MAX_REVISIONS):
         ) from _LANGGRAPH_IMPORT_ERROR
 
     researcher_node = _load_agent_node(
-        "agents.researchers", "researcher_node", _researcher_fallback
+        "agents.researchers", "researcher_node", _researcher_fallback, strict=strict
     )
-    writer_node = _load_agent_node("agents.writer", "writer_node", _writer_fallback)
+    writer_node = _load_agent_node("agents.writer", "writer_node", _writer_fallback, strict=strict)
     reviewer_node = _load_agent_node(
-        "agents.reviewer", "reviewer_node", _reviewer_fallback
+        "agents.reviewer", "reviewer_node", _reviewer_fallback, strict=strict
     )
 
     graph = StateGraph(ResearchState)
@@ -181,7 +184,7 @@ def compile_graph(max_revisions: int = MAX_REVISIONS):
         },
     )
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
 def run_smoke_test(topic: str = "多智能体系统中的反思机制") -> ResearchState:

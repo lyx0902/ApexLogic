@@ -30,7 +30,7 @@ GAP_RESULTS_PER_QUERY        (默认 "4")  – 每条补充查询的 DDG 结果�
 from __future__ import annotations
 
 import json
-import os
+from core.run_config import setting
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -186,9 +186,9 @@ class IterativeRetrievalOptimizer:
         results_per_query: int = 3,
     ) -> None:
         # 环境变量优先覆盖构造参数
-        self.max_hops = int(os.getenv("MAX_HOPS", str(max_hops)))
-        self.gap_queries_per_hop = int(os.getenv("GAP_QUERIES_PER_HOP", str(gap_queries_per_hop)))
-        self.results_per_query = int(os.getenv("GAP_RESULTS_PER_QUERY", str(results_per_query)))
+        self.max_hops = int(setting("MAX_HOPS", str(max_hops)))
+        self.gap_queries_per_hop = int(setting("GAP_QUERIES_PER_HOP", str(gap_queries_per_hop)))
+        self.results_per_query = int(setting("GAP_RESULTS_PER_QUERY", str(results_per_query)))
 
     # ── 内部：LLM 实例化 ──────────────────────────────────────────────
 
@@ -196,11 +196,11 @@ class IterativeRetrievalOptimizer:
         """从环境变量构建 DeepSeek LLM 实例。失败返回 None。"""
         if not _LANGCHAIN_AVAILABLE or ChatOpenAI is None:
             return None
-        api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+        api_key = setting("DEEPSEEK_API_KEY", "").strip()
         if not api_key:
             return None
-        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-        model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+        base_url = setting("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        model = setting("DEEPSEEK_MODEL", "deepseek-v4-pro")
         try:
             return ChatOpenAI(
                 model=model,
@@ -480,7 +480,7 @@ class IterativeRetrievalOptimizer:
 
         # ── 循环后最终总结：确保最后一跳的文档被总结 ──────────────────────
         # 检查是否需要生成最终总结推理链
-        enable_final_summary = os.getenv("IRCOT_ENABLE_FINAL_SUMMARY", "1").strip() == "1"
+        enable_final_summary = setting("IRCOT_ENABLE_FINAL_SUMMARY", "1").strip() == "1"
 
         if enable_final_summary and all_gap_contexts and current_docs and reasoning_chains:
             try:

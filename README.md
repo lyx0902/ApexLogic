@@ -31,6 +31,18 @@ streamlit run app.py
 python main.py --topic "你的研究主题" --output-mode debug
 ```
 
+## 状态恢复
+
+CLI 与 Streamlit 支持基于 SQLite checkpoint 的节点级断点恢复。每次研究打印
+`run_id`，程序重启后可执行 `python main.py --resume RUN_ID`；也可在侧边栏的
+“研究任务 · 断点恢复”中继续。原任务的阈值、轮次和检索配置随任务保存。
+
+`python main.py --status RUN_ID` 查询已保存进度；
+`python export_report.py --run-id RUN_ID --output-mode both` 从已完成任务导出，不再调用模型。
+执行结束和质量通过分别显示。Researcher 内部中断仍需重跑该节点。
+
+存储、恢复边界、兼容性与测试说明见 [状态恢复说明](docs/state-recovery.md)。
+
 ## 核心特性
 
 **四层检索优化**，逐层作用于同一候选文档池，最后经 BGE 两阶段精筛选出 Top-10 高质量上下文：
@@ -71,7 +83,7 @@ python export_report.py --topic "你的研究主题" --output-mode user/debug/bo
 | `both` | 同时输出 user + debug 两份 Markdown + BGE 检索明细 JSON |
 | `user_only` | 内部运行完整流水线，仅导出用户侧 Markdown |
 
-输出文件落地 `reports/` 目录，文件名含时间戳。
+输出文件默认落地项目 `reports/` 目录，持久化任务按 `run_id` 命名，重复导出更新相同文件。
 
 ## Streamlit Web UI
 

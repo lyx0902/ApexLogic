@@ -23,6 +23,12 @@ class ResearchState(ResearchStateCore, total=False):
     - 额外字段用于支持图路由、调试信息与最终输出，不影响核心流程。
     """
 
+    run_id: str
+    thread_id: str
+    schema_version: int
+    workflow_version: str
+    run_config: Dict[str, Any]
+
     # Reviewer 给出的下一跳建议：end / researcher / writer
     next_route: str
     # 是否判定为"信息不足"，用于区分回到 Researcher 还是 Writer

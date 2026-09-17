@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import os
+import json
 from typing import Any
 
 from dotenv import load_dotenv
 
-from core.graph import compile_graph
-from core.state import create_initial_state
+from core.runner import ResearchRunner
 
 
 def _format_trace_item(item: dict[str, Any]) -> str:
@@ -48,19 +47,31 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Deep Research Multi-Agent Runner")
     parser.add_argument(
         "--topic",
-        default="多智能体系统中的反思机制与自我优化",
+        default=None,
         help="研究主题",
     )
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--resume", metavar="RUN_ID", help="恢复任务（使用原配置）")
+    actions.add_argument("--status", metavar="RUN_ID", help="查看已保存状态")
+    actions.add_argument("--list-runs", action="store_true", help="列出研究任务")
+    parser.add_argument("--data-dir", default=None, help="持久化目录，默认项目 data/")
+    parser.add_argument("--max-revisions", type=int, default=None)
+    parser.add_argument("--pass-threshold", type=float, default=None)
     parser.add_argument(
         "--output-mode",
         choices=["user", "debug"],
-        default="debug",
+        default=None,
         help="输出模式：user 仅面向读者，debug 含系统细节",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if (args.resume or args.status or args.list_runs) and any(
+        value is not None for value in (args.topic, args.max_revisions, args.pass_threshold, args.output_mode)
+    ):
+        parser.error("恢复/查询任务不能覆盖原任务参数；如需修改参数，请创建新任务。")
+    return args
 
 
-def run() -> dict[str, Any]:
+def run() -> dict[str, Any] | None:
     """加载配置并执行研究图。"""
 
     env_loaded = load_dotenv()
@@ -68,20 +79,33 @@ def run() -> dict[str, Any]:
         load_dotenv(".env.example")
     args = parse_args()
 
-    max_revisions = int(os.getenv("MAX_REVISIONS", "3"))
-    app = compile_graph(max_revisions=max_revisions)
-    initial_state = create_initial_state(
-        topic=args.topic,
-        output_mode=args.output_mode,
-    )
-    final_state = app.invoke(initial_state)
-
-    return final_state
+    runner = ResearchRunner(args.data_dir)
+    if args.list_runs:
+        for item in runner.repository.list():
+            print(f"{item['run_id']}  {item['status']}  {item['topic']}")
+        return None
+    if args.status:
+        info = runner.inspect(args.status)
+        print(json.dumps({k: v for k, v in info.items() if k != "state"}, ensure_ascii=False, indent=2))
+        return None
+    if args.resume:
+        run_id = args.resume
+    else:
+        record = runner.create(args.topic if args.topic is not None else "多智能体系统中的反思机制与自我优化",
+            max_revisions=args.max_revisions, pass_threshold=args.pass_threshold,
+            output_mode=args.output_mode or "debug")
+        run_id = record["run_id"]
+    print(f"[RUN] run_id={run_id}", flush=True)
+    print(f'[RECOVERY] python main.py --resume {run_id} --data-dir "{runner.data_dir}"', flush=True)
+    return runner.run(run_id)
 
 
 if __name__ == "__main__":
     state = run()
+    if state is None:
+        raise SystemExit(0)
     print("[RUN] finished")
+    print("quality=" + ("passed" if state.get("is_satisfactory") else "not_passed"))
     print(f"topic={state.get('topic', '')}")
     print(f"revision_step={state.get('revision_step', 0)}")
     print(f"is_satisfactory={state.get('is_satisfactory', False)}")

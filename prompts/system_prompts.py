@@ -529,7 +529,7 @@ def build_reviewer_rule_hint() -> str:
     return (
         "评审检查项: 1) 事实准确性(S1,权重35%); 2) 逻辑完整性(S2,权重25%); "
         "3) 信息覆盖广度(S3,权重25%); 4) 结论可执行性(S4,权重15%)。"
-        "加权总分>=7.0为通过，S1<5或S3<4时路由回Researcher。"
+        "通过需达到运行配置中的分数阈值，并通过关键证据门槛；S1<5、S3<4或关键证据缺失时路由回Researcher。"
     )
 
 
@@ -589,7 +589,7 @@ def build_reviewer_user_prompt(
         reasoning_note = (
             f"\n\n【推理链说明】\n"
             f"本次研究启用了 IRCoT 多跳推理，报告中可能包含 [推理链N] 引用。\n"
-            f"这些引用代表系统通过多跳推理验证的结论，具有高可信度，应视为有效论据支撑。"
+            f"这些引用仅代表模型推理，不能作为独立事实证据。关键结论必须回溯到[S#]或[R#]实际来源。"
         )
 
     round_hint = (
@@ -604,6 +604,9 @@ def build_reviewer_user_prompt(
         f"【原始检索来源（BGE筛选Top-10，标记为[S1][S2]...）】\n{sources_text}"
         f"{reasoning_section}\n\n"
         f"【待评审草稿】\n{draft[:10000]}\n\n"
+        "关键证据硬门槛：evidence_verdicts 必须逐项覆盖题目所需的所有关键事实和多跳关系，critical=true。不能把核心事实标为非关键以绕过审核。\n"
+        "status 使用 supported/partial/unsupported/contradicted；supported 必须有 citation_ids（如 S1、R2）和 source_quote，逐字摘录上面提供的来源片段，至少8个非空白字符。\n"
+        "不得把模型推理、猜测、未查到记录当成事实证明。遇到问题前提错误，需要用来源支撑纠正前提的关键结论。\n"
         "请输出一个合法 JSON 对象，包含以下字段（禁止任何额外文本）：\n"
         '{"scores":{"S1":int,"S2":int,"S3":int,"S4":int},'
         '"weighted_score":float,'
@@ -618,5 +621,5 @@ def build_reviewer_user_prompt(
         '"supporter":{"strengths":[str],"supported_claims":[str]},'
         '"skeptic":{"critical_issues":[str],"missing_evidence":[str]},'
         '"controversy_points":[string],'
-        '"evidence_verdicts":[{"claim":str,"status":str,"evidence":str,"action":str}]}'
+        '"evidence_verdicts":[{"claim":str,"critical":bool,"status":str,"citation_ids":[str],"source_quote":str,"evidence":str,"action":str}]}'
     )

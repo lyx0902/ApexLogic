@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from core.run_config import configured_node, setting
 from typing import Any, Dict, List, Optional
 
 try:
@@ -152,6 +152,7 @@ def _generate_draft_with_llm(
     return (getattr(response, "content", "") or "").strip()
 
 
+@configured_node
 def writer_node(state: ResearchState) -> Dict[str, Any]:
     """主笔代理节点。
 
@@ -199,9 +200,9 @@ def writer_node(state: ResearchState) -> Dict[str, Any]:
             "execution_trace": trace,
         }
 
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
-    deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-    deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    deepseek_api_key = setting("DEEPSEEK_API_KEY", "")
+    deepseek_base_url = setting("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    deepseek_model = setting("DEEPSEEK_MODEL", "deepseek-chat")
 
     if not deepseek_api_key:
         errors = _append_error(errors, "未检测到 DEEPSEEK_API_KEY，Writer 使用本地占位草稿。")

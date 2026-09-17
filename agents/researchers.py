@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from core.run_config import configured_node, setting
 import re
 from typing import Any, Dict, List, Optional
 
@@ -104,12 +104,12 @@ def _rewrite_queries_with_llm(
     if ChatOpenAI is None:
         return seed_queries
 
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    deepseek_api_key = setting("DEEPSEEK_API_KEY", "")
     if not deepseek_api_key:
         return seed_queries
 
-    deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-    deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    deepseek_base_url = setting("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    deepseek_model = setting("DEEPSEEK_MODEL", "deepseek-chat")
 
     llm = ChatOpenAI(
         model=deepseek_model,
@@ -296,11 +296,11 @@ def _resolve_base_budgets(q_count: int) -> tuple[Dict[str, int], Dict[str, str]]
         legacy_key: str,
         default_total: int,
     ) -> tuple[int, str]:
-        total_raw = os.getenv(total_key)
+        total_raw = setting(total_key)
         if total_raw is not None and str(total_raw).strip() != "":
             return max(int(total_raw), 0), total_key
 
-        legacy_raw = os.getenv(legacy_key)
+        legacy_raw = setting(legacy_key)
         if legacy_raw is not None and str(legacy_raw).strip() != "":
             legacy_per_query = max(int(legacy_raw), 0)
             return legacy_per_query * q_count, legacy_key
@@ -422,6 +422,7 @@ def _collect_broad_contexts(
     return contexts, errors, summary
 
 
+@configured_node
 def researcher_node(state: ResearchState) -> Dict[str, Any]:
     """检索代理节点。
 
@@ -454,7 +455,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     except Exception as exc:
         errors = _append_error(errors, f"DeepSeek 查询重写失败，已使用规则检索词: {exc}")
 
-    query_budget = int(os.getenv("SEARCH_QUERY_BUDGET", "3"))
+    query_budget = int(setting("SEARCH_QUERY_BUDGET", "3"))
     effective_queries = queries[:query_budget]
 
     # ── MAB：从环境变量获取基础预算，Thompson Sampling 分配本轮预算 ───
@@ -480,7 +481,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     normalized_contexts = _dedupe_and_index_contexts(contexts)
 
     # ── 图扩展查询：从已检索文档构建概念共现图，补搜核心概念方向 ──────
-    graph_expand_k = int(os.getenv("GRAPH_EXPAND_QUERIES", "2"))
+    graph_expand_k = int(setting("GRAPH_EXPAND_QUERIES", "2"))
     graph_expand_summary: Dict[str, Any] = {"enabled": False, "extra_queries": [], "extra_contexts": 0}
     if graph_expand_k > 0 and normalized_contexts:
         try:
@@ -512,13 +513,13 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             errors = _append_error(errors, f"图扩展查询失败，已跳过: {exc}")
 
     # ── 自适应查询分解（AQD）: 分解主题→子问题→逐一补搜 ──────────────
-    aqd_enabled = os.getenv("AQD_ENABLED", "1").strip() == "1"
+    aqd_enabled = setting("AQD_ENABLED", "1").strip() == "1"
     query_plan: Dict[str, Any] = {"enabled": False}
 
     if aqd_enabled and normalized_contexts:
         try:
-            max_sub_questions = int(os.getenv("AQD_MAX_SUB_QUESTIONS", "4"))
-            results_per_subq = int(os.getenv("AQD_RESULTS_PER_SUBQ", "3"))
+            max_sub_questions = int(setting("AQD_MAX_SUB_QUESTIONS", "4"))
+            results_per_subq = int(setting("AQD_RESULTS_PER_SUBQ", "3"))
             planner = AdaptiveQueryPlanner(
                 max_sub_questions=max_sub_questions,
                 results_per_subq=results_per_subq,
@@ -540,7 +541,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             errors = _append_error(errors, f"AQD 查询分解失败，已跳过: {exc}")
 
     # ── 迭代检索优化（IRCoT）: 推理链→识别缺口→补搜 ─────────────────
-    iter_enabled = os.getenv("ITERATIVE_RETRIEVAL_ENABLED", "1").strip() == "1"
+    iter_enabled = setting("ITERATIVE_RETRIEVAL_ENABLED", "1").strip() == "1"
     iterative_retrieval_summary: Dict[str, Any] = {"enabled": False}
     reasoning_chains: List[str] = list(state.get("reasoning_chains", []))
     reasoning_contexts_raw: List[Dict[str, Any]] = []
@@ -548,9 +549,9 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     if iter_enabled and normalized_contexts:
         try:
-            max_hops = int(os.getenv("MAX_HOPS", "4"))
-            gap_queries_per_hop = int(os.getenv("GAP_QUERIES_PER_HOP", "2"))
-            results_per_query = int(os.getenv("GAP_RESULTS_PER_QUERY", "3"))
+            max_hops = int(setting("MAX_HOPS", "4"))
+            gap_queries_per_hop = int(setting("GAP_QUERIES_PER_HOP", "2"))
+            results_per_query = int(setting("GAP_RESULTS_PER_QUERY", "3"))
 
             optimizer = IterativeRetrievalOptimizer(
                 max_hops=max_hops,
@@ -603,17 +604,17 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         except Exception as exc:
             errors = _append_error(errors, f"IRCoT 迭代检索失败，已跳过: {exc}")
 
-    retriever_top_k = int(os.getenv("BGE_RETRIEVER_TOP_K", "20"))
-    reranker_top_k = int(os.getenv("BGE_RERANKER_TOP_K", "10"))
+    retriever_top_k = int(setting("BGE_RETRIEVER_TOP_K", "20"))
+    reranker_top_k = int(setting("BGE_RERANKER_TOP_K", "10"))
 
     bge_config_snapshot = {
-        "retriever_enabled": os.getenv("BGE_RETRIEVER_ENABLED", "1"),
-        "reranker_enabled": os.getenv("BGE_RERANKER_ENABLED", "1"),
-        "retriever_model": os.getenv("BGE_EMBED_MODEL", "BAAI/bge-m3"),
-        "retriever_base_url": os.getenv("BGE_EMBED_BASE_URL", "https://api.siliconflow.cn/v1"),
+        "retriever_enabled": setting("BGE_RETRIEVER_ENABLED", "1"),
+        "reranker_enabled": setting("BGE_RERANKER_ENABLED", "1"),
+        "retriever_model": setting("BGE_EMBED_MODEL", "BAAI/bge-m3"),
+        "retriever_base_url": setting("BGE_EMBED_BASE_URL", "https://api.siliconflow.cn/v1"),
         "retriever_top_k": retriever_top_k,
-        "reranker_model": os.getenv("BGE_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
-        "reranker_base_url": os.getenv("BGE_RERANK_BASE_URL", "https://api.siliconflow.cn/v1"),
+        "reranker_model": setting("BGE_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
+        "reranker_base_url": setting("BGE_RERANK_BASE_URL", "https://api.siliconflow.cn/v1"),
         "reranker_top_k": reranker_top_k,
     }
 

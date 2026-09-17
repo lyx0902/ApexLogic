@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
-import os
+from core.run_config import configured_node, setting
 import re
 from typing import Any, Dict, List, Optional
 
@@ -291,7 +291,7 @@ def _resolve_pass_threshold() -> float:
     """安全解析通过阈值，避免环境变量畸形触发额外降级。"""
 
     try:
-        return float(os.getenv("REVIEWER_PASS_THRESHOLD", "7.5"))
+        return float(setting("REVIEWER_PASS_THRESHOLD", "7.5"))
     except (TypeError, ValueError):
         return 7.5
 
@@ -303,7 +303,7 @@ def _allow_degraded_pass() -> bool:
     仅在显式设置 REVIEWER_ALLOW_DEGRADED_PASS=1 时放行（仍会打降级标记）。
     """
 
-    return os.getenv("REVIEWER_ALLOW_DEGRADED_PASS", "0").strip() == "1"
+    return setting("REVIEWER_ALLOW_DEGRADED_PASS", "0").strip() == "1"
 
 
 def _finalize_review(
@@ -351,6 +351,46 @@ def _finalize_review(
             "degraded_blocked": degraded_blocked,
         }
     )
+    return review
+
+
+def _apply_evidence_gate(review, retrieved_context, reasoning_contexts=None, reasoning_enabled=False):
+    """Require source-backed critical claims; scores cannot override this gate."""
+    sources = {}
+    for item in retrieved_context[:10]:
+        if isinstance(item, dict):
+            sources[str(item.get("citation_id", "?"))] = (
+                str(item.get("core_summary") or "")[:400] + " " + str(item.get("content") or "")[:300])
+    if reasoning_enabled:
+        for i, item in enumerate((reasoning_contexts or [])[:15], 1):
+            if isinstance(item, dict):
+                sources[f"R{i}"] = str(item.get("core_summary") or item.get("content") or "")[:400]
+    verdicts = _to_dict_list(review.get("evidence_verdicts"))
+    critical = [v for v in verdicts if v.get("critical") is not False]
+    reasons = []
+    if not critical:
+        reasons.append("缺少关键结论逐项证据审查，必须覆盖问题的各个必要推理环节。")
+    normalize = lambda value: "".join(str(value).split()).casefold()
+    for v in critical:
+        claim = str(v.get("claim") or "未说明的关键结论")
+        status = str(v.get("status", "")).strip().lower()
+        if status not in {"supported", "verified", "已验证", "已支持"}:
+            reasons.append(f"{claim}：证据状态不是完全支持。")
+            continue
+        ids = v.get("citation_ids")
+        quote = normalize(v.get("source_quote") or "")
+        if (not isinstance(ids, list) or not ids
+                or any(not isinstance(cid, str) or cid not in sources for cid in ids)
+                or len(quote) < 8
+                or not any(quote in normalize(sources[cid]) for cid in ids)):
+            reasons.append(f"{claim}：缺少有效来源编号或可核对的原文片段，推理链不能替代来源。")
+    review["evidence_gate_blocked"] = bool(reasons)
+    review["evidence_gate_reasons"] = reasons
+    if reasons:
+        review["is_satisfactory"] = False
+        review["needs_more_research"] = True
+        review["info_gaps"] = list(dict.fromkeys(_to_issue_list(review.get("info_gaps")) + reasons))
+        review["critique_feedback"] = str(review.get("critique_feedback") or "") + "\n关键证据门槛未通过：\n" + "\n".join(reasons)
     return review
 
 
@@ -540,12 +580,12 @@ def _llm_review(
     if ChatOpenAI is None:
         raise RuntimeError("langchain_openai 未安装")
 
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    deepseek_api_key = setting("DEEPSEEK_API_KEY", "")
     if not deepseek_api_key:
         raise RuntimeError("未检测到 DEEPSEEK_API_KEY")
 
-    deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
-    deepseek_model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    deepseek_base_url = setting("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+    deepseek_model = setting("DEEPSEEK_MODEL", "deepseek-chat")
 
     llm = ChatOpenAI(
         model=deepseek_model,
@@ -641,6 +681,7 @@ def _llm_review(
     )
 
 
+@configured_node
 def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     """评审代理节点。
 
@@ -682,6 +723,8 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         errors = _append_error(errors, f"Reviewer LLM 评审失败，已回退规则评审: {exc}")
         review = _rule_based_review(draft=draft, retrieved_context=retrieved_context)
 
+    review = _apply_evidence_gate(review, retrieved_context,
+                                  state.get("reasoning_contexts"), bool(state.get("reasoning_enabled")))
     review_mode = str(review.get("review_mode", "rule"))
     degraded = bool(review.get("degraded", False))
     if degraded and llm_error is None:
@@ -718,6 +761,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             "is_satisfactory": is_satisfactory,
             "degraded": degraded,
             "degraded_blocked": degraded_blocked,
+            "evidence_gate_blocked": review.get("evidence_gate_blocked", False),
             "next_route": next_route,
             "fact_issues": len(review.get("fact_issues", [])),
             "logic_issues": len(review.get("logic_issues", [])),

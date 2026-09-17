@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
+from core.run_config import setting
 import re
 import urllib.parse
 import urllib.request
@@ -38,7 +38,7 @@ BUILTIN_SYNONYMS: Dict[str, List[str]] = {
 def _load_custom_synonyms() -> Dict[str, List[str]]:
     """从 JSON 文件加载可选同义词。"""
 
-    file_path = (os.getenv("ARXIV_SYNONYM_FILE", "") or "").strip()
+    file_path = (setting("ARXIV_SYNONYM_FILE", "") or "").strip()
     if not file_path:
         return {}
 
