@@ -107,7 +107,10 @@ def _render_markdown_user(state: ResearchState) -> str:
     contexts = state.get("retrieved_context", []) or []
     reasoning_contexts = state.get("reasoning_contexts", []) or []
     report = _inject_citation_hyperlinks(report, contexts, reasoning_contexts)
-    lines: List[str] = [f"# 深度研究报告：{topic}", "", report if report else "(未生成正文)"]
+    lines: List[str] = [f"# 深度研究报告：{topic}", ""]
+    if state.get("answer_status") == "limited":
+        lines.extend(["> 本报告为Reviewer 接受的有限结论；仍有明确披露的未解决问题，不代表完整回答。", ""])
+    lines.append(report if report else "(未生成正文)")
 
     lines.append("")
     lines.append("## 参考文献")
@@ -171,7 +174,13 @@ def _render_markdown_debug(state: ResearchState) -> str:
     lines.append("")
     lines.append(f"- 迭代轮次: {state.get('revision_step', 0)}")
     lines.append(f"- 是否通过评审: {state.get('is_satisfactory', False)}")
+    lines.append(f"- 回答类型: {state.get('answer_status', 'unknown')}")
+    lines.append(f"- 研究截至时间: {state.get('run_config', {}).get('research_as_of', '未记录')}")
     lines.append(f"- 下一路由建议: {state.get('next_route', '')}")
+    if state.get("memory_stats") or state.get("memory_publication"):
+        lines.append(f"- 跨任务记忆召回: {state.get('memory_stats', {})}")
+        lines.append(f"- 实际引用记忆: {state.get('memory_used_ids', [])}")
+        lines.append(f"- 记忆发布: {state.get('memory_publication', {})}")
     lines.append(f"- 评审模式: {review.get('review_mode', 'unknown')}")
     review_stats = state.get("review_stats", {}) or {}
     if review_stats:

@@ -46,10 +46,13 @@ def open_checkpointer(data_dir: Path):
     data_dir.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(data_dir / "checkpoints.sqlite"), timeout=30, check_same_thread=False)
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=FULL")
-        saver = SqliteSaver(conn)
-        saver.setup()
+        # journal_mode changes can fail immediately despite busy_timeout when
+        # two processes initialize a new database together. Serialize setup only.
+        with portalocker.Lock(str(data_dir / "checkpoints.init.lock"), mode="a", timeout=30):
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=FULL")
+            saver = SqliteSaver(conn)
+            saver.setup()
         yield saver
     finally:
         conn.close()

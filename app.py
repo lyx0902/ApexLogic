@@ -207,6 +207,8 @@ def save_run_to_history(
         "pass_threshold": pass_threshold,
         "iterations_done": final_state.get("revision_step", 0),
         "is_satisfactory": bool(final_state.get("is_satisfactory", False)),
+        "answer_status": final_state.get("answer_status", "unknown"),
+        "research_as_of": final_state.get("run_config", {}).get("research_as_of"),
         "weighted_score": float(review_result.get("weighted_score", 0.0)),
         "elapsed_seconds": round(elapsed_seconds, 1),
         "final_report": final_state.get("final_report") or final_state.get("draft", ""),
@@ -245,6 +247,9 @@ def save_run_to_history(
         "errors": final_state.get("errors", [])[:10],
         "run_metadata": {
             "iteration_snapshots": iteration_snapshots or [],
+            "memory_stats": final_state.get("memory_stats", {}),
+            "memory_used_ids": final_state.get("memory_used_ids", []),
+            "memory_publication": final_state.get("memory_publication", {}),
             # 推理链数据
             "reasoning_enabled": final_state.get("reasoning_enabled", False),
             "reasoning_chains": final_state.get("reasoning_chains", []),
@@ -298,7 +303,7 @@ def _history_label(record: dict) -> str:
         ts = "??-??"
     topic_short = data["topic"][:14] + ("…" if len(data["topic"]) > 14 else "")
     score = data.get("weighted_score", 0.0)
-    ok = "✅" if data.get("is_satisfactory") else "❌"
+    ok = "✅" if data.get("is_satisfactory") else ("⚠️ 有限结论" if data.get("answer_status") == "limited" else "❌")
     return f"{ts} · {topic_short} · {score:.2f}分 {ok}"
 
 
@@ -370,6 +375,9 @@ def show_history_view(data: dict) -> None:
 
     # ── IRCoT 推理链参考文献（历史记录）────────────────────────────────────
     run_metadata = data.get("run_metadata", {})
+    if run_metadata.get("memory_stats") or run_metadata.get("memory_publication"):
+        with st.expander("历史记忆使用记录"):
+            st.json({k: run_metadata.get(k) for k in ("memory_stats", "memory_used_ids", "memory_publication")})
     h_reasoning_enabled = run_metadata.get("reasoning_enabled", False)
     h_reasoning_contexts = run_metadata.get("reasoning_contexts", [])
 
@@ -622,6 +630,8 @@ def show_history_view(data: dict) -> None:
                     h_is_ok: bool = snap.get("is_satisfactory", False)
                     if h_is_ok:
                         st.success("✅ 评审通过！报告质量达标。")
+                    elif snap.get("answer_status") == "limited":
+                        st.warning("Reviewer 接受有限结论；报告仍有未解决问题。")
                     else:
                         st.warning("本轮评审未通过，修订意见已记录。")
 
@@ -777,8 +787,10 @@ if inspect_run_id and not start_btn and not resume_run_id:
         st.write("完成时间：", info["record"].get("completed_at") or "尚未完成")
         if item.get("last_error"):
             st.warning(item["last_error"])
+        if item.get("termination_reason") == "limited":
+            st.warning("研究已结束：Reviewer 接受的有限结论，仍有未解决的问题。")
         if item.get("termination_reason") == "max_revisions":
-            st.warning("研究已结束，但未达到评审质量阈值。")
+            st.warning("研究已结束，但未达到评审通过条件。")
         saved = info["state"]
         if saved.get("draft"):
             st.markdown(_inject_citation_hyperlinks(saved.get("final_report") or saved["draft"],
@@ -840,6 +852,7 @@ except Exception as exc:
     st.stop()
 
 st.caption(f"任务 ID：{run_id}。进度保存在本地，重启后可从侧边栏继续。")
+st.caption("研究截至时间：" + (run_record["run_config"].get("research_as_of") or "旧任务未记录"))
 
 
 # ── 运行参数概览（研究主题单行 + 4 列其余参数）──────────
@@ -1110,7 +1123,7 @@ try:
                 is_ok: bool = full_state.get("is_satisfactory", False)
                 status_placeholder.info(
                     f"🧐 第 {current_iteration} 轮 · Reviewer 评审完成 — "
-                    f"{'通过 ✅' if is_ok else '未通过，继续迭代 🔄'}"
+                    f"{'通过 ✅' if is_ok else ('有限结论 ⚠️' if full_state.get('answer_status') == 'limited' else '未通过，继续迭代 🔄')}"
                 )
 
                 with st.expander(
@@ -1118,6 +1131,8 @@ try:
                 ):
                     if is_ok:
                         st.success("✅ 评审通过！报告质量达标，即将输出最终报告。")
+                    elif full_state.get("answer_status") == "limited":
+                        st.warning("Reviewer 接受有限结论；报告仍有未解决问题。")
                     else:
                         st.warning("本轮评审未通过，修订意见已记录。")
 
@@ -1185,12 +1200,15 @@ try:
                     "revision_directives": full_state.get("revision_directives", {}),
                     "next_route": full_state.get("next_route", ""),
                     "is_satisfactory": bool(full_state.get("is_satisfactory", False)),
+                    "answer_status": full_state.get("answer_status", "unknown"),
                 })
 
     if final_state.get("is_satisfactory"):
         status_placeholder.success("✅ 研究完成，报告已通过评审。")
+    elif final_state.get("answer_status") == "limited":
+        status_placeholder.warning("研究已结束：Reviewer 接受有限结论，但问题尚未完整解决。")
     else:
-        status_placeholder.warning("研究已结束，但未达到评审质量阈值。")
+        status_placeholder.warning("研究已结束，但未达到评审通过条件。")
 
 except Exception as exc:
     status_placeholder.error(f"❌ 流程异常中断：{exc}")
@@ -1207,6 +1225,30 @@ render_live_timer(timer_placeholder, run_start_time, stop_seconds=elapsed_second
 attempts = runner.repository.attempts(run_id)
 known_seconds = sum(a["elapsed_seconds"] or 0 for a in attempts)
 st.caption(f"已记录执行时间：{known_seconds:.1f} 秒；执行尝试：{len(attempts)} 次。强制退出的未记录时长不计入。")
+
+
+memory_stats = final_state.get("memory_stats", {})
+memory_publication = final_state.get("memory_publication", {})
+if memory_stats.get("enabled") or memory_publication:
+    st.caption(f"跨任务记忆：召回 {memory_stats.get('recalled', 0)} 条，入选 {memory_stats.get('selected', 0)} 条，"
+               f"报告引用 {len(final_state.get('memory_used_ids', []))} 条。")
+    if memory_publication.get("status") == "failed":
+        st.warning("研究已完成，但记忆发布失败。再次打开完成结果可重试发布，不会重新执行研究。")
+    elif memory_publication.get("status") == "skipped":
+        reasons = {"report_not_accepted": "报告尚未通过证据与质量审核", "no_reviewed_claims": "没有逐项核验的主张",
+                   "only_time_sensitive_claims": "仅含时效性事实", "no_eligible_original_evidence": "没有满足原文、引用与来源要求的证据",
+                   "legacy_empty_publication": "旧记录发布为空，没有实际入库"}
+        st.caption("本次未入库：" + reasons.get(memory_publication.get("skip_reason"), "没有可发布证据"))
+    elif memory_publication.get("status") == "completed":
+        st.caption(f"记忆发布完成：本任务关联 {len(memory_publication.get('item_ids', []))} 条证据（可能含去重复用）。")
+    if memory_stats.get("status") == "failed":
+        st.warning("记忆召回暂不可用，本次已继续在线检索。")
+    elif memory_stats.get("status") == "fresh_search_required":
+        st.caption("该问题包含时效要求，已跳过历史记忆，使用在线检索。")
+    with st.expander("记忆来源与发布详情"):
+        st.json({"recall": memory_stats, "used_ids": final_state.get("memory_used_ids", []), "publication": memory_publication})
+        st.json([{k: c.get(k) for k in ("citation_id", "memory_id", "memory_version", "url", "memory_observed_at", "memory_valid_until")}
+                 for c in final_state.get("retrieved_context", []) if isinstance(c, dict) and c.get("memory_id")])
 
 
 # ── 保存历史记录（失败不中断主流程）──────────────────────────────────────────────

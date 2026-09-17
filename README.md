@@ -162,3 +162,14 @@ python -u evals/elapsed_stats.py --input tests/results_hotpotqa_20260411_172430.
 
 - 不要把真实 API Key 提交到仓库，`.env` 已在 `.gitignore` 中
 - `.env.example` 只放占位值
+
+
+## 跨任务语义记忆
+
+新建持久化任务默认启用来源记忆（`MEMORY_ENABLED=1`），独立保存在 `data/memory.sqlite`。
+评审接受后，记忆模块仅发布在报告中引用且能追溯到检索原文的稳定片段；记忆筛选不影响报告通过。
+下一任务用 BGE + NumPy 召回，仍保留在线检索；时效问题优先使用在线来源。
+旧 checkpoint 不会自动开启记忆，也不自动导入历史报告。
+Web 展示召回、入选、引用和发布状态，发布失败可重新打开已完成任务重试。
+
+配置、验收和限制见 [语义记忆使用说明](docs/semantic-memory.md)。

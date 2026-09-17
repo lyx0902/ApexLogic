@@ -105,7 +105,7 @@ if __name__ == "__main__":
     if state is None:
         raise SystemExit(0)
     print("[RUN] finished")
-    print("quality=" + ("passed" if state.get("is_satisfactory") else "not_passed"))
+    print("quality=" + ("passed" if state.get("is_satisfactory") else ("limited" if state.get("answer_status") == "limited" else "not_passed")))
     print(f"topic={state.get('topic', '')}")
     print(f"revision_step={state.get('revision_step', 0)}")
     print(f"is_satisfactory={state.get('is_satisfactory', False)}")

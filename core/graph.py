@@ -134,7 +134,7 @@ def _reviewer_fallback(state: ResearchState) -> Dict[str, Any]:
 def reviewer_route(state: ResearchState, max_revisions: int = MAX_REVISIONS) -> str:
     """Reviewer 条件路由函数。"""
 
-    if state.get("is_satisfactory", False):
+    if state.get("is_satisfactory", False) or state.get("answer_status") == "limited":
         return ROUTE_END
 
     if state.get("revision_step", 0) >= max_revisions:

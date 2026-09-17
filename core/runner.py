@@ -30,6 +30,7 @@ class ResearchRunner:
 
     def create(self, topic, *, max_revisions=None, pass_threshold=None, output_mode="debug"):
         config = make_run_config(max_revisions=max_revisions, pass_threshold=pass_threshold, output_mode=output_mode)
+        config["memory"]["data_dir"] = str(self.data_dir)
         return self.repository.create(topic, config)
 
     def _record(self, run_id):
@@ -71,7 +72,7 @@ class ResearchRunner:
         return snapshot
 
     def _complete(self, run_id, state, completed_at):
-        reason = "passed" if state.get("is_satisfactory") else "max_revisions"
+        reason = "passed" if state.get("is_satisfactory") else ("limited" if state.get("answer_status") == "limited" else "max_revisions")
         self.repository.update(run_id, status="completed", termination_reason=reason,
                                checkpoint_seen=1, last_error=None, completed_at=completed_at)
 
@@ -84,6 +85,24 @@ class ResearchRunner:
                                    termination_reason=None)
         elif record["status"] == "running":
             self.repository.update(record["run_id"], status="interrupted")
+
+    def _memory_result(self, record, snapshot, *, publish=False):
+        state = dict(snapshot.values)
+        options = record["run_config"].get("memory", {})
+        if not options.get("enabled") or snapshot.next:
+            return state
+        try:
+            from memory.service import MemoryService
+            service = MemoryService(record["run_config"])
+            checkpoint_id = snapshot.config["configurable"]["checkpoint_id"]
+            receipt = (service.publish(state, checkpoint_id, snapshot.created_at) if publish else
+                       service.repo.publication(record["run_id"], checkpoint_id, options["namespace"]))
+            if receipt:
+                state["memory_publication"] = receipt
+                state["memory_write_ids"] = receipt["item_ids"]
+        except Exception as exc:
+            state["memory_publication"] = {"status": "failed", "error": type(exc).__name__}
+        return state
 
     def inspect(self, run_id):
         """Reconcile stale metadata only when no executor owns the run lock."""
@@ -99,7 +118,7 @@ class ResearchRunner:
                 snapshot = self._snapshot(record, self._graph(record, saver), saver)
             running = True
         return {"record": self.repository.get(run_id), "running": running,
-                "state": dict(snapshot.values) if snapshot else {},
+                "state": self._memory_result(record, snapshot) if snapshot else {},
                 "next": list(snapshot.next) if snapshot else [],
                 "saved_at": snapshot.created_at if snapshot else None,
                 "attempts": self.repository.attempts(run_id)}
@@ -113,7 +132,7 @@ class ResearchRunner:
                 snapshot = self._snapshot(record, graph, saver)
                 self._reconcile(record, snapshot)
                 if snapshot is not None and not snapshot.next:
-                    yield RunEvent("complete", None, dict(snapshot.values))
+                    yield RunEvent("complete", None, self._memory_result(record, snapshot, publish=True))
                     return
                 state = dict(snapshot.values) if snapshot else create_initial_state(
                     record["topic"], output_mode=record["run_config"]["output_mode"])
@@ -145,7 +164,7 @@ class ResearchRunner:
                     self.repository.update(run_id, status="interrupted", last_error=error)
                     self.repository.finish_attempt(attempt_id, "interrupted", time.monotonic() - started, error)
                     raise
-                yield RunEvent("complete", None, dict(saved.values))
+                yield RunEvent("complete", None, self._memory_result(record, saved, publish=True))
 
     def run(self, run_id):
         final = None

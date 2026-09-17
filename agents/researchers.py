@@ -154,6 +154,8 @@ def _normalize_context_item(item: Dict[str, Any] | str) -> Dict[str, Any]:
             "url": str(item.get("url", "")),
             "source": str(item.get("source", "unknown")),
             "content": str(item.get("content", "")),
+            **{key: item[key] for key in ("origin", "memory_id", "memory_version", "memory_source_run_id",
+                "memory_observed_at", "memory_valid_until", "memory_score") if key in item},
         }
     return {
         "title": "text_context",
@@ -276,7 +278,7 @@ def _dedupe_and_index_contexts(
             continue
         seen.add(key)
         normalized = dict(item)
-        normalized["core_summary"] = _extract_core_summary(
+        normalized["core_summary"] = normalized["content"] if normalized.get("origin") == "memory" else _extract_core_summary(
             title=str(normalized.get("title", "")),
             content=str(normalized.get("content", "")),
         )
@@ -604,6 +606,12 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         except Exception as exc:
             errors = _append_error(errors, f"IRCoT 迭代检索失败，已跳过: {exc}")
 
+    # Online evidence wins URL deduplication; recalled items retain immutable provenance.
+    from memory.service import recall_for_state
+    memory_hits, memory_stats = recall_for_state(state)
+    if memory_hits:
+        normalized_contexts = _dedupe_and_index_contexts(list(normalized_contexts) + memory_hits)
+
     retriever_top_k = int(setting("BGE_RETRIEVER_TOP_K", "20"))
     reranker_top_k = int(setting("BGE_RERANKER_TOP_K", "10"))
 
@@ -672,7 +680,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     dropped_count = max(len(normalized_contexts) - len(filtered_contexts), 0)
 
     # ── MAB：计算各信源奖励并更新 Beta 参数 ──────────────────────────
-    mab_rewards = compute_source_rewards(filtered_contexts, mab_budgets)
+    mab_rewards = compute_source_rewards([c for c in filtered_contexts if c.get("origin") != "memory"], mab_budgets)
     mab.update(mab_rewards)
     updated_mab_state = mab.to_dict()
 
@@ -701,6 +709,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         }
     )
 
+    memory_stats["selected_ids"] = [c["memory_id"] for c in filtered_contexts if c.get("memory_id")]
+    memory_stats["selected"] = len(memory_stats["selected_ids"])
     source_quality_summary: Dict[str, Any] = {}
     source_quality_summary["bge_summary"] = bge_stage_summary
     trace = list(state.get("execution_trace", []))
@@ -730,6 +740,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     return {
         "search_queries": queries,
+        "memory_stats": memory_stats,
+        "memory_query_ids": list(dict.fromkeys(state.get("memory_query_ids", []) + ([memory_stats["query_id"]] if memory_stats.get("query_id") else []))),
         "retrieved_context": filtered_contexts,
         "source_quality_summary": source_quality_summary,
         "errors": errors,

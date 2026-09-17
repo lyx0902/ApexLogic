@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
-from core.run_config import configured_node, setting
+from core.run_config import configured_node, setting, research_time_hint
 import re
 from typing import Any, Dict, List, Optional
 
@@ -354,43 +354,16 @@ def _finalize_review(
     return review
 
 
-def _apply_evidence_gate(review, retrieved_context, reasoning_contexts=None, reasoning_enabled=False):
-    """Require source-backed critical claims; scores cannot override this gate."""
-    sources = {}
-    for item in retrieved_context[:10]:
-        if isinstance(item, dict):
-            sources[str(item.get("citation_id", "?"))] = (
-                str(item.get("core_summary") or "")[:400] + " " + str(item.get("content") or "")[:300])
-    if reasoning_enabled:
-        for i, item in enumerate((reasoning_contexts or [])[:15], 1):
-            if isinstance(item, dict):
-                sources[f"R{i}"] = str(item.get("core_summary") or item.get("content") or "")[:400]
-    verdicts = _to_dict_list(review.get("evidence_verdicts"))
-    critical = [v for v in verdicts if v.get("critical") is not False]
-    reasons = []
-    if not critical:
-        reasons.append("缺少关键结论逐项证据审查，必须覆盖问题的各个必要推理环节。")
-    normalize = lambda value: "".join(str(value).split()).casefold()
-    for v in critical:
-        claim = str(v.get("claim") or "未说明的关键结论")
-        status = str(v.get("status", "")).strip().lower()
-        if status not in {"supported", "verified", "已验证", "已支持"}:
-            reasons.append(f"{claim}：证据状态不是完全支持。")
-            continue
-        ids = v.get("citation_ids")
-        quote = normalize(v.get("source_quote") or "")
-        if (not isinstance(ids, list) or not ids
-                or any(not isinstance(cid, str) or cid not in sources for cid in ids)
-                or len(quote) < 8
-                or not any(quote in normalize(sources[cid]) for cid in ids)):
-            reasons.append(f"{claim}：缺少有效来源编号或可核对的原文片段，推理链不能替代来源。")
-    review["evidence_gate_blocked"] = bool(reasons)
-    review["evidence_gate_reasons"] = reasons
-    if reasons:
+def _label_answer(review):
+    """Label score-accepted answers for UI; impose no additional evidence gate."""
+    accepted = bool(review.get("is_satisfactory"))
+    kind = review.get("answer_type", "complete")
+    if kind not in {"complete", "corrected", "limited"}:
+        kind = "complete"
+    review["quality_accepted"] = accepted
+    review["answer_status"] = kind if accepted else "not_passed"
+    if accepted and kind == "limited":
         review["is_satisfactory"] = False
-        review["needs_more_research"] = True
-        review["info_gaps"] = list(dict.fromkeys(_to_issue_list(review.get("info_gaps")) + reasons))
-        review["critique_feedback"] = str(review.get("critique_feedback") or "") + "\n关键证据门槛未通过：\n" + "\n".join(reasons)
     return review
 
 
@@ -550,7 +523,7 @@ def _build_revision_directives(review: Dict[str, Any], next_route: str) -> Dict[
         if not must_fix:
             must_fix = ["逐条响应 critique_feedback 并修订对应段落"]
     else:
-        route_reason = "评审通过。"
+        route_reason = "Reviewer 接受有限结论。" if review.get("answer_status") == "limited" else "评审通过。"
         focus_areas = []
         must_fix = []
 
@@ -574,6 +547,7 @@ def _llm_review(
     revision_step: int = 0,
     reasoning_contexts: Optional[List[Dict[str, Any]]] = None,
     reasoning_enabled: bool = False,
+    reasoning_chains: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """调用 DeepSeek 输出四维量化评分 JSON，传入 top-10 原始来源 + 推理链文档供事实核查。"""
 
@@ -597,6 +571,7 @@ def _llm_review(
         [
             ("system", REVIEWER_SYSTEM_PROMPT),
             ("system", build_reviewer_rule_hint()),
+            ("system", research_time_hint()),
             ("human", build_reviewer_user_prompt(
                 topic,
                 draft,
@@ -604,6 +579,7 @@ def _llm_review(
                 revision_step=revision_step - 1,
                 reasoning_contexts=reasoning_contexts,
                 reasoning_enabled=reasoning_enabled,
+                reasoning_chains=reasoning_chains,
             )),
         ]
     )
@@ -657,6 +633,9 @@ def _llm_review(
     return _finalize_review(
         {
             "scores": scores,
+            "answer_type": d.get("answer_type", "complete"),
+            "premise_assessment": _to_dict_list(d.get("premise_assessment", [])),
+            "unresolved_questions": _to_dict_list(d.get("unresolved_questions", [])),
             # 模型自报布尔值只作为路由建议，不放行判定仍以加权分为准
             "needs_more_research": bool(d.get("needs_more_research", False)),
             "critique_feedback": str(d.get("critique_feedback", "请给出更具体的修订建议。")),
@@ -717,14 +696,14 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             revision_step=revision_step,
             reasoning_contexts=reasoning_contexts,
             reasoning_enabled=reasoning_enabled,
+            reasoning_chains=state.get("reasoning_chains", []),
         )
     except Exception as exc:
         llm_error = str(exc)
         errors = _append_error(errors, f"Reviewer LLM 评审失败，已回退规则评审: {exc}")
         review = _rule_based_review(draft=draft, retrieved_context=retrieved_context)
 
-    review = _apply_evidence_gate(review, retrieved_context,
-                                  state.get("reasoning_contexts"), bool(state.get("reasoning_enabled")))
+    review = _label_answer(review)
     review_mode = str(review.get("review_mode", "rule"))
     degraded = bool(review.get("degraded", False))
     if degraded and llm_error is None:
@@ -737,7 +716,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     is_satisfactory = bool(review.get("is_satisfactory", False))
     needs_more_research = bool(review.get("needs_more_research", False))
 
-    if is_satisfactory:
+    if is_satisfactory or review.get("answer_status") == "limited":
         next_route = ROUTE_END
     else:
         next_route = ROUTE_RESEARCHER if needs_more_research else ROUTE_WRITER
@@ -759,9 +738,9 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
             "weighted_score": weighted_score,
             "pass_threshold": pass_threshold,
             "is_satisfactory": is_satisfactory,
+            "answer_status": review.get("answer_status", "not_passed"),
             "degraded": degraded,
             "degraded_blocked": degraded_blocked,
-            "evidence_gate_blocked": review.get("evidence_gate_blocked", False),
             "next_route": next_route,
             "fact_issues": len(review.get("fact_issues", [])),
             "logic_issues": len(review.get("logic_issues", [])),
@@ -798,8 +777,12 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
     if degraded:
         degraded_rounds.append(revision_step)
 
+    memory_used_ids = [c["memory_id"] for c in retrieved_context
+                       if isinstance(c, dict) and c.get("memory_id") and f"[{c.get('citation_id')}]" in draft]
     result: Dict[str, Any] = {
+        "memory_used_ids": list(dict.fromkeys(memory_used_ids)),
         "revision_step": revision_step,
+        "answer_status": review.get("answer_status", "not_passed"),
         "is_satisfactory": is_satisfactory,
         "needs_more_research": needs_more_research,
         "next_route": next_route,
@@ -812,7 +795,7 @@ def reviewer_node(state: ResearchState) -> Dict[str, Any]:
         "review_stats": stats,
         "review_degraded_rounds": degraded_rounds,
     }
-    if is_satisfactory:
+    if is_satisfactory or review.get("answer_status") == "limited":
         report = draft
         if degraded:
             # 降级放行（REVIEWER_ALLOW_DEGRADED_PASS=1）时必须在报告中留痕

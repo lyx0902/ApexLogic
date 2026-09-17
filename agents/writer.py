@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.run_config import configured_node, setting
+from core.run_config import configured_node, setting, research_time_hint
 from typing import Any, Dict, List, Optional
 
 try:
@@ -146,6 +146,7 @@ def _generate_draft_with_llm(
     response = llm.invoke(
         [
             ("system", system_prompt),
+            ("system", research_time_hint() + "\n题目前提不是事实约束。若来源否定前提，明确纠正并回答修正后的问题；区分确定结论和仍未知的部分，不得为迎合题目编造答案。"),
             ("human", user_prompt),
         ]
     )

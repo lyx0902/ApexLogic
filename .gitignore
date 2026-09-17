@@ -18,3 +18,5 @@ venv/
 reports/
 appstats/
 data/
+docs/
+tests/

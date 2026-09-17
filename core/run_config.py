@@ -8,6 +8,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
+from datetime import datetime
 import hashlib
 import json
 import math
@@ -30,6 +31,16 @@ BGE_RETRIEVER_ENABLED BGE_RERANKER_ENABLED BGE_EMBED_MODEL BGE_EMBED_BASE_URL
 BGE_EMBED_TIMEOUT BGE_EMBED_BATCH_SIZE BGE_RERANK_MODEL BGE_RERANK_BASE_URL
 BGE_RERANK_TIMEOUT ENABLE_TAVILY_FALLBACK ARXIV_SYNONYM_FILE
 """.split())
+_RESEARCH_AS_OF = ContextVar("research_as_of", default=None)
+
+
+def research_time_hint():
+    value = _RESEARCH_AS_OF.get()
+    if not value:
+        return "研究截至日期未提供；不得凭模型记忆假定当前日期。对时效结论须明确时间不确定性。"
+    return f"本任务固定研究截至时间：{value}。所有‘目前/现任’均相对此时间判断；区分来源发布日期、事件生效日与研究截至日，不得假设当前早于已经过去的生效日。"
+
+
 _ACTIVE: ContextVar[Mapping[str, str | None] | None] = ContextVar("run_settings", default=None)
 
 
@@ -78,6 +89,23 @@ def validate_config(config: dict) -> dict:
             parsed = urlsplit(value)
             if parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise ValueError(f"{key} 不能包含凭据、查询参数或片段")
+    if "research_as_of" in config:
+        if not isinstance(config["research_as_of"], str) or datetime.fromisoformat(config["research_as_of"]).tzinfo is None:
+            raise ValueError("研究截至时间必须包含时区")
+    # Missing block identifies a legacy task: memory stays disabled without mutation.
+    if "memory" in config:
+        m = config["memory"]
+        if not isinstance(m, dict) or set(m) != {"enabled", "namespace", "top_k", "min_score", "ttl_days", "char_budget", "data_dir"}:
+            raise ValueError("无效的记忆配置")
+        if type(m["enabled"]) is not bool or not isinstance(m["namespace"], str) or not m["namespace"].strip():
+            raise ValueError("无效的记忆开关或命名空间")
+        if not isinstance(m["data_dir"], str):
+            raise ValueError("无效的记忆目录")
+        for key, low, high in [("top_k", 1, 20), ("ttl_days", 1, 3650), ("char_budget", 400, 20000)]:
+            if type(m[key]) is not int or not low <= m[key] <= high:
+                raise ValueError("无效的记忆数值配置")
+        if not isinstance(m["min_score"], (int, float)) or not math.isfinite(m["min_score"]) or not 0 <= m["min_score"] <= 1:
+            raise ValueError("无效的记忆相关性阈值")
     return config
 
 
@@ -87,7 +115,14 @@ def make_run_config(*, max_revisions: int | None = None,
     env["MAX_REVISIONS"] = str(max_revisions if max_revisions is not None else int(env["MAX_REVISIONS"] or "3"))
     env["REVIEWER_PASS_THRESHOLD"] = str(pass_threshold if pass_threshold is not None else float(env["REVIEWER_PASS_THRESHOLD"] or "7.5"))
     env["REVIEWER_ALLOW_DEGRADED_PASS"] = env["REVIEWER_ALLOW_DEGRADED_PASS"] or "0"
-    config = {"schema_version": SCHEMA_VERSION, "settings": env, "output_mode": output_mode}
+    flag = os.getenv("MEMORY_ENABLED", "1").strip()
+    if flag not in {"0", "1"}:
+        raise ValueError("MEMORY_ENABLED 必须为 0 或 1")
+    memory = {"enabled": flag == "1", "namespace": os.getenv("MEMORY_NAMESPACE", "workspace/default"),
+              "top_k": int(os.getenv("MEMORY_TOP_K", "5")), "min_score": float(os.getenv("MEMORY_MIN_SCORE", "0.65")),
+              "ttl_days": int(os.getenv("MEMORY_TTL_DAYS", "30")), "char_budget": int(os.getenv("MEMORY_CHAR_BUDGET", "3000")),
+              "data_dir": ""}
+    config = {"schema_version": SCHEMA_VERSION, "settings": env, "output_mode": output_mode, "memory": memory, "research_as_of": datetime.now().astimezone().isoformat()}
     return validate_config(config)
 
 
@@ -102,10 +137,12 @@ def bind_config(config: dict | None):
         return
     validate_config(config)
     token = _ACTIVE.set(MappingProxyType(dict(config["settings"])))
+    time_token = _RESEARCH_AS_OF.set(config.get("research_as_of"))
     try:
         yield
     finally:
         _ACTIVE.reset(token)
+        _RESEARCH_AS_OF.reset(time_token)
 
 
 def configured_node(fn):
