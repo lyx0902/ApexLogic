@@ -8,6 +8,7 @@ from core.graph import compile_graph
 from core.persistence import RunBusyError, data_directory, open_checkpointer, run_lock
 from core.run_config import SCHEMA_VERSION, WORKFLOW_VERSION, config_hash, make_run_config, validate_config
 from core.run_repository import RunRepository
+from core import storage as storage_factory
 from core.state import create_initial_state
 
 
@@ -23,18 +24,30 @@ class RunEvent:
 
 
 class ResearchRunner:
-    def __init__(self, data_dir=None, *, graph_factory=compile_graph):
+    def __init__(self, data_dir=None, *, graph_factory=compile_graph, backend=None):
         self.data_dir = data_directory(data_dir)
-        self.repository = RunRepository(self.data_dir)
+        self.storage = storage_factory.storage_settings(backend)
+        self.repository = storage_factory.run_repository(self.data_dir, self.storage)
         self.graph_factory = graph_factory
+
+    def _lock(self, run_id):
+        return storage_factory.execution_lock(self.data_dir, run_id, self.storage)
+
+    def _checkpointer(self):
+        return storage_factory.checkpointer(self.data_dir, self.storage)
 
     def create(self, topic, *, max_revisions=None, pass_threshold=None, output_mode="debug"):
         config = make_run_config(max_revisions=max_revisions, pass_threshold=pass_threshold, output_mode=output_mode)
         config["memory"]["data_dir"] = str(self.data_dir)
+        config["storage"] = dict(self.storage)
+        if self.storage["backend"] == "postgres":
+            config["memory"]["data_dir"] = ""
         return self.repository.create(topic, config)
 
     def _record(self, run_id):
         record = self.repository.get(run_id)
+        if storage_factory.config_storage(record["run_config"]) != self.storage:
+            raise RecoveryError("任务属于另一存储后端；请切换后端后恢复，不能原地修改历史配置。")
         if record["schema_version"] != SCHEMA_VERSION or record["workflow_version"] != WORKFLOW_VERSION:
             raise RecoveryError("状态结构或工作流版本不兼容；请保留原数据并使用兼容版本恢复。")
         validate_config(record["run_config"])
@@ -108,13 +121,13 @@ class ResearchRunner:
         """Reconcile stale metadata only when no executor owns the run lock."""
         record = self._record(run_id)
         try:
-            with run_lock(self.data_dir, run_id):
-                with open_checkpointer(self.data_dir) as saver:
+            with self._lock(run_id):
+                with self._checkpointer() as saver:
                     snapshot = self._snapshot(record, self._graph(record, saver), saver)
                     self._reconcile(record, snapshot)
                 running = False
         except RunBusyError:
-            with open_checkpointer(self.data_dir) as saver:
+            with self._checkpointer() as saver:
                 snapshot = self._snapshot(record, self._graph(record, saver), saver)
             running = True
         return {"record": self.repository.get(run_id), "running": running,
@@ -125,9 +138,9 @@ class ResearchRunner:
 
     def stream(self, run_id):
         """Consume fully or use contextlib.closing to release lock on UI exit."""
-        with run_lock(self.data_dir, run_id):
+        with self._lock(run_id):
             record = self._record(run_id)
-            with open_checkpointer(self.data_dir) as saver:
+            with self._checkpointer() as saver:
                 graph = self._graph(record, saver)
                 snapshot = self._snapshot(record, graph, saver)
                 self._reconcile(record, snapshot)
@@ -175,7 +188,7 @@ class ResearchRunner:
 
     def history(self, run_id):
         record = self._record(run_id)
-        with open_checkpointer(self.data_dir) as saver:
+        with self._checkpointer() as saver:
             graph = self._graph(record, saver)
             self._snapshot(record, graph, saver)
             snapshots = list(graph.get_state_history(self._invocation_config(record)))

@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg17
+    environment:
+      POSTGRES_USER: apexlogic
+      POSTGRES_DB: apexlogic
+      POSTGRES_PASSWORD: ${APEXLOGIC_POSTGRES_PASSWORD:?Set APEXLOGIC_POSTGRES_PASSWORD first}
+    ports:
+      - "127.0.0.1:${APEXLOGIC_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - apexlogic_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apexlogic -d apexlogic"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+volumes:
+  apexlogic_postgres:

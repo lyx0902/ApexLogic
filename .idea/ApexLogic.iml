@@ -7,7 +7,10 @@
       <excludeFolder url="file://$MODULE_DIR$/data" />
       <excludeFolder url="file://$MODULE_DIR$/docs" />
       <excludeFolder url="file://$MODULE_DIR$/reports" />
+      <excludeFolder url="file://$MODULE_DIR$/tests" />
       <excludeFolder url="file://$MODULE_DIR$/tests/fixtures" />
+      <excludeFolder url="file://$MODULE_DIR$/.idea/dataSources" />
+      <excludeFolder url="file://$MODULE_DIR$/migrations" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.12 (ApexLogic)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

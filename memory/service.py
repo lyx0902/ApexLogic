@@ -41,7 +41,8 @@ class MemoryService:
     def __init__(self, config, *, embed=None, repository=None):
         self.options = config["memory"]
         self.namespace = self.options["namespace"]
-        self.repo = repository or MemoryRepository(self.options["data_dir"])
+        from core.storage import memory_repository
+        self.repo = repository if repository is not None else memory_repository(config)
         settings = config["settings"]
         self.model = settings.get("BGE_EMBED_MODEL") or "BAAI/bge-m3"
         self.base = settings.get("BGE_EMBED_BASE_URL") or "https://api.siliconflow.cn/v1"
@@ -78,22 +79,23 @@ class MemoryService:
             self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
             return [], stats
         vector = self._vectors([query])[0]
-        compatible = []
-        vectors = []
-        for row in candidates:
-            arr = np.frombuffer(row["vector"], dtype="<f4")
-            if len(arr) != row["dimension"] or len(arr) != len(vector):
-                raise ValueError("stored embedding dimension mismatch")
-            validate_vectors([arr])
-            compatible.append(row)
-            vectors.append(arr)
-        matrix = np.stack(vectors)
-        scores = (matrix / np.linalg.norm(matrix, axis=1, keepdims=True)) @ (vector / np.linalg.norm(vector))
+        if hasattr(self.repo, "rank_candidates"):
+            ranked = self.repo.rank_candidates(candidates, vector, self.identity)
+        else:
+            vectors = []
+            for row in candidates:
+                arr = np.frombuffer(row["vector"], dtype="<f4")
+                if len(arr) != row["dimension"] or len(arr) != len(vector):
+                    raise ValueError("stored embedding dimension mismatch")
+                validate_vectors([arr])
+                vectors.append(arr)
+            matrix = np.stack(vectors)
+            scores = (matrix / np.linalg.norm(matrix, axis=1, keepdims=True)) @ (vector / np.linalg.norm(vector))
+            ranked = [(candidates[i], float(scores[i])) for i in np.argsort(-scores, kind="stable")]
         hits, remaining = [], self.options["char_budget"]
-        for i in np.argsort(-scores, kind="stable"):
-            if float(scores[i]) < self.options["min_score"] or len(hits) >= self.options["top_k"]:
+        for row, score in ranked:
+            if score < self.options["min_score"] or len(hits) >= self.options["top_k"]:
                 break
-            row = compatible[i]
             # Recheck status after potentially slow embedding/network call.
             fresh = self.repo.get(row["id"], self.namespace)
             if not fresh or fresh["status"] != "active" or fresh["valid_until"] <= now():
@@ -105,7 +107,7 @@ class MemoryService:
                          "content": row["content"], "core_summary": row["content"],
                          "memory_id": row["id"], "memory_version": row["version"],
                          "memory_source_run_id": row["source_run_id"], "memory_observed_at": row["observed_at"],
-                         "memory_valid_until": row["valid_until"], "memory_score": round(float(scores[i]), 6)})
+                         "memory_valid_until": row["valid_until"], "memory_score": round(score, 6)})
         stats.update(status="ok", recalled=len(hits), recalled_ids=[x["memory_id"] for x in hits],
                      elapsed_seconds=round(time.monotonic() - started, 4))
         self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
@@ -193,7 +195,9 @@ class MemoryService:
 
 def recall_for_state(state):
     options = state.get("run_config", {}).get("memory", {})
-    if not options.get("enabled") or not options.get("data_dir") or not state.get("run_id"):
+    from core.storage import config_storage
+    has_store = options.get("data_dir") or config_storage(state.get("run_config", {}))["backend"] == "postgres"
+    if not options.get("enabled") or not has_store or not state.get("run_id"):
         return [], {"enabled": False, "status": "disabled"}
     try:
         return MemoryService(state["run_config"]).recall(state)

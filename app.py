@@ -690,11 +690,16 @@ if "history_data" not in st.session_state:
 
 # 提前加载历史列表（侧边栏和欢迎页均需要）
 history_list = load_history_list()
+storage_choices = ["sqlite", "postgres"]
+storage_default = os.getenv("APEXLOGIC_STORAGE_BACKEND", "sqlite")
+selected_storage = st.sidebar.selectbox("任务存储", storage_choices,
+    index=storage_choices.index(storage_default) if storage_default in storage_choices else 0,
+    format_func=lambda value: "SQLite（本地 / 旧任务）" if value == "sqlite" else "PostgreSQL")
 try:
-    runner = ResearchRunner()
+    runner = ResearchRunner(backend=selected_storage)
     run_list = runner.repository.list()
 except Exception as exc:
-    st.error(f"无法打开任务存储：{exc}")
+    st.error(f"无法打开任务存储（{type(exc).__name__}）。PostgreSQL 请先按 docs/postgres-migration.md 配置并初始化；SQLite 旧任务可切换后端查看。")
     st.stop()
 resume_run_id = None
 inspect_run_id = None

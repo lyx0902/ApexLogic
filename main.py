@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     actions.add_argument("--status", metavar="RUN_ID", help="查看已保存状态")
     actions.add_argument("--list-runs", action="store_true", help="列出研究任务")
     parser.add_argument("--data-dir", default=None, help="持久化目录，默认项目 data/")
+    parser.add_argument("--storage-backend", choices=["sqlite", "postgres"], default=None,
+                        help="任务存储后端；旧任务使用 sqlite")
     parser.add_argument("--max-revisions", type=int, default=None)
     parser.add_argument("--pass-threshold", type=float, default=None)
     parser.add_argument(
@@ -79,7 +81,7 @@ def run() -> dict[str, Any] | None:
         load_dotenv(".env.example")
     args = parse_args()
 
-    runner = ResearchRunner(args.data_dir)
+    runner = ResearchRunner(args.data_dir, backend=args.storage_backend)
     if args.list_runs:
         for item in runner.repository.list():
             print(f"{item['run_id']}  {item['status']}  {item['topic']}")
@@ -96,7 +98,7 @@ def run() -> dict[str, Any] | None:
             output_mode=args.output_mode or "debug")
         run_id = record["run_id"]
     print(f"[RUN] run_id={run_id}", flush=True)
-    print(f'[RECOVERY] python main.py --resume {run_id} --data-dir "{runner.data_dir}"', flush=True)
+    print(f'[RECOVERY] python main.py --resume {run_id} --storage-backend {runner.storage["backend"]} --data-dir "{runner.data_dir}"', flush=True)
     return runner.run(run_id)
 
 

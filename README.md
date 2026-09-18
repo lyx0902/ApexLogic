@@ -173,3 +173,8 @@ python -u evals/elapsed_stats.py --input tests/results_hotpotqa_20260411_172430.
 Web 展示召回、入选、引用和发布状态，发布失败可重新打开已完成任务重试。
 
 配置、验收和限制见 [语义记忆使用说明](docs/semantic-memory.md)。
+
+## PostgreSQL / pgvector（可选后端）
+
+默认继续使用 SQLite。PostgreSQL 安装、初始化、旧记忆导入和验收说明见 [迁移指南](docs/postgres-migration.md)。
+Streamlit 左侧可切换任务存储；CLI 使用 `--storage-backend sqlite|postgres`。旧任务继续在原后端恢复。

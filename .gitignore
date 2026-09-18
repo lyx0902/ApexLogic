@@ -20,3 +20,4 @@ appstats/
 data/
 docs/
 tests/
+migrations/

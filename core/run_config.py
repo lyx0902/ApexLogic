@@ -56,6 +56,11 @@ def setting(key: str, default: Any = None) -> Any:
 def validate_config(config: dict) -> dict:
     if config.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("任务配置版本不兼容")
+    if "storage" in config:
+        storage = config["storage"]
+        if (not isinstance(storage, dict) or set(storage) != {"backend", "profile"}
+                or storage["backend"] not in {"sqlite", "postgres"} or storage["profile"] != "default"):
+            raise ValueError("无效的存储配置；连接凭据不能写入任务快照")
     env = config.get("settings")
     if not isinstance(env, dict) or set(env) != SETTING_KEYS:
         raise ValueError("任务配置字段缺失或包含未知字段")

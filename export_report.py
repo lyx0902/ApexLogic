@@ -60,6 +60,7 @@ def parse_args() -> argparse.Namespace:
     )
     source.add_argument("--run-id", help="从已完成任务导出，不调用模型")
     parser.add_argument("--data-dir", default=None, help="任务持久化目录")
+    parser.add_argument("--storage-backend", choices=["sqlite", "postgres"], default=None)
     parser.add_argument(
         "--max-revisions",
         type=int,
@@ -801,6 +802,7 @@ def run_and_export(
     output: str | None,
     output_mode: str,
     data_dir=None,
+    backend=None,
 ) -> List[str]:
     """执行图并导出 markdown 报告，返回输出路径列表。"""
 
@@ -809,16 +811,16 @@ def run_and_export(
         load_dotenv(".env.example")
 
     from core.runner import ResearchRunner
-    runner = ResearchRunner(data_dir)
+    runner = ResearchRunner(data_dir, backend=backend)
     record = runner.create(topic, max_revisions=max_revisions, output_mode="debug")
     print(f"[RUN] run_id={record['run_id']}", flush=True)
     runner.run(record["run_id"])
-    return export_saved_run(record["run_id"], output=output, output_mode=output_mode, data_dir=runner.data_dir)
+    return export_saved_run(record["run_id"], output=output, output_mode=output_mode, data_dir=runner.data_dir, backend=runner.storage["backend"])
 
 
-def export_saved_run(run_id: str, *, output=None, output_mode="both", data_dir=None) -> List[str]:
+def export_saved_run(run_id: str, *, output=None, output_mode="both", data_dir=None, backend=None) -> List[str]:
     from core.runner import ResearchRunner
-    runner = ResearchRunner(data_dir)
+    runner = ResearchRunner(data_dir, backend=backend)
     state = runner.completed_state(run_id)
     if output is None:
         output = str(Path(__file__).resolve().parent / "reports" / f"run_{run_id}.md")
@@ -870,9 +872,9 @@ if __name__ == "__main__":
     load_dotenv()
     args = parse_args()
     if args.run_id:
-        paths = export_saved_run(args.run_id, output=args.output, output_mode=args.output_mode, data_dir=args.data_dir)
+        paths = export_saved_run(args.run_id, output=args.output, output_mode=args.output_mode, data_dir=args.data_dir, backend=args.storage_backend)
     else:
         paths = run_and_export(topic=args.topic, max_revisions=args.max_revisions,
-                              output=args.output, output_mode=args.output_mode, data_dir=args.data_dir)
+                              output=args.output, output_mode=args.output_mode, data_dir=args.data_dir, backend=args.storage_backend)
     for path in paths:
         print(f"[EXPORT] report saved: {path}")
