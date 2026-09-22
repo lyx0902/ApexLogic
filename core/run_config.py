@@ -54,6 +54,10 @@ def setting(key: str, default: Any = None) -> Any:
 
 
 def validate_config(config: dict) -> dict:
+    if "memory_first" in config:
+        policy = config["memory_first"]
+        if not isinstance(policy, dict) or set(policy) != {"mode"} or policy["mode"] not in {"off", "observe", "reuse"}:
+            raise ValueError("无效的记忆优先策略")
     if config.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("任务配置版本不兼容")
     if "storage" in config:
@@ -127,7 +131,8 @@ def make_run_config(*, max_revisions: int | None = None,
               "top_k": int(os.getenv("MEMORY_TOP_K", "5")), "min_score": float(os.getenv("MEMORY_MIN_SCORE", "0.65")),
               "ttl_days": int(os.getenv("MEMORY_TTL_DAYS", "30")), "char_budget": int(os.getenv("MEMORY_CHAR_BUDGET", "3000")),
               "data_dir": ""}
-    config = {"schema_version": SCHEMA_VERSION, "settings": env, "output_mode": output_mode, "memory": memory, "research_as_of": datetime.now().astimezone().isoformat()}
+    config = {"schema_version": SCHEMA_VERSION, "settings": env, "output_mode": output_mode, "memory": memory, "research_as_of": datetime.now().astimezone().isoformat(),
+              "memory_first": {"mode": os.getenv("MEMORY_FIRST_MODE", "reuse")}}
     return validate_config(config)
 
 
@@ -153,6 +158,13 @@ def bind_config(config: dict | None):
 def configured_node(fn):
     @wraps(fn)
     def wrapped(state):
-        with bind_config(state.get("run_config")):
-            return fn(state)
+        from core.cache import cache_scope
+        with bind_config(state.get("run_config")), cache_scope(state) as stats:
+            result = fn(state)
+            cumulative = dict(state.get("cache_stats", {}))
+            for key, value in stats.items():
+                cumulative[key] = cumulative.get(key, 0) + value
+            if cumulative:
+                result["cache_stats"] = cumulative
+            return result
     return wrapped

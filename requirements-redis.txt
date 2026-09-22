@@ -1,0 +1,2 @@
+# Optional cache infrastructure; durable storage does not require Redis.
+redis>=5.2,<6

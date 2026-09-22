@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from core.run_config import setting
+from core.cache import cached_search
 import re
 import urllib.parse
 import urllib.request
@@ -121,6 +122,7 @@ def _build_fallback_queries(query: str) -> List[str]:
     return unique[:6]
 
 
+@cached_search("arxiv:atom:v1")
 def _fetch_arxiv_once(search_text: str, limit: int) -> List[Dict[str, Any]]:
     """单次请求 ArXiv API。"""
 

@@ -32,6 +32,8 @@ class ResearchState(ResearchStateCore, total=False):
     memory_query_ids: List[str]
     memory_used_ids: List[str]
     memory_stats: Dict[str, Any]
+    memory_first: Dict[str, Any]
+    cache_stats: Dict[str, Any]
     memory_publication: Dict[str, Any]
     memory_write_ids: List[str]
 

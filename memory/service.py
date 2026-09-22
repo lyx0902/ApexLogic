@@ -62,21 +62,23 @@ class MemoryService:
             raise ValueError("embedding count mismatch")
         return result
 
-    def recall(self, state):
+    def recall(self, state, *, query=None, log=True):
         started = time.monotonic()
-        query = state["topic"]
+        query = state["topic"] if query is None else query
         query_id = digest(f"{state['run_id']}:{state.get('revision_step', 0)}:{self.namespace}:{query}")
         stats = {"enabled": True, "query_id": query_id, "candidates": 0, "recalled": 0, "selected": 0}
         if time_sensitive(query):
             stats["status"] = "fresh_search_required"
-            self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
+            if log:
+                self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
             return [], stats
         candidates = self.repo.candidates(self.namespace, self.identity, now())
         candidates = [r for r in candidates if r["source_run_id"] != state["run_id"] and not time_sensitive(r["claim"])]
         stats["candidates"] = len(candidates)
         if not candidates:
             stats["status"] = "empty"
-            self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
+            if log:
+                self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
             return [], stats
         vector = self._vectors([query])[0]
         if hasattr(self.repo, "rank_candidates"):
@@ -110,7 +112,8 @@ class MemoryService:
                          "memory_valid_until": row["valid_until"], "memory_score": round(score, 6)})
         stats.update(status="ok", recalled=len(hits), recalled_ids=[x["memory_id"] for x in hits],
                      elapsed_seconds=round(time.monotonic() - started, 4))
-        self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
+        if log:
+            self.repo.log_access(query_id, state["run_id"], self.namespace, stats)
         return hits, stats
 
     def _eligible(self, state, completed_at):
@@ -149,6 +152,11 @@ class MemoryService:
                 observed = datetime.fromisoformat(completed_at)
                 if observed.tzinfo is None:
                     observed = observed.replace(tzinfo=timezone.utc)
+                if "cache_fetched_at" in context:
+                    try:
+                        observed = min(observed, datetime.fromtimestamp(float(context["cache_fetched_at"]), timezone.utc))
+                    except (ValueError, TypeError, OverflowError, OSError):
+                        continue  # Do not turn malformed cached provenance into fresh evidence.
                 items[item_id] = {"id": item_id, "namespace": self.namespace, "url": url,
                     "title": str(context.get("title") or "")[:200], "content": quote, "claim": claim[:1000],
                     "topic": state["topic"], "content_hash": content_hash, "source_run_id": state["run_id"],

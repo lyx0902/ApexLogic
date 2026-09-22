@@ -160,7 +160,7 @@ class MemoryRepository:
                              (query_id, run_id, namespace)).fetchone()
             if row:
                 details = json.loads(row["details"])
-                details.update(selected_ids=selected_ids, used_ids=used_ids)
+                details.update(selected=len(selected_ids), selected_ids=selected_ids, used_ids=used_ids)
                 db.execute("UPDATE memory_access_log SET details=?,updated_at=? WHERE query_id=?",
                            (json.dumps(details, ensure_ascii=False), now(), query_id))
 

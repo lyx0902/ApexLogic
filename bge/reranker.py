@@ -4,6 +4,7 @@ from core.run_config import setting
 from typing import Any, Dict, List, Tuple
 
 import requests
+import math
 
 
 def _pack_ranked_items(
@@ -17,30 +18,33 @@ def _pack_ranked_items(
     selected = ranked_items[: max(top_k, 0)]
     dropped = ranked_items[max(top_k, 0) :]
 
-    def _to_view(item: Dict[str, Any], rank: int) -> Dict[str, Any]:
+    def _to_view(item: Dict[str, Any], rank: int, selected: bool) -> Dict[str, Any]:
+        score = item.get(score_key)
         return {
-            "rank": rank,
+            "rank": rank if score is not None else None,
             "title": str(item.get("title", ""))[:140],
             "source": str(item.get("source", "")),
             "url": str(item.get("url", "")),
-            "score": float(item.get(score_key, 0.0)),
+            "score": float(score) if score is not None else None,
+            "reason": ("selected_top_k" if selected else item.get("_audit_reason", "rank_below_top_k")),
+            **{k: item[k] for k in ("origin", "memory_id", "memory_source_run_id") if k in item},
         }
 
     selected_view = [
-        _to_view(item, idx)
+        _to_view(item, idx, True)
         for idx, item in enumerate(selected[:sample_limit], start=1)
     ]
     dropped_view = [
-        _to_view(item, idx + len(selected))
+        _to_view(item, idx + len(selected), False)
         for idx, item in enumerate(dropped[:sample_limit], start=1)
     ]
 
     selected_full = [
-        _to_view(item, idx)
+        _to_view(item, idx, True)
         for idx, item in enumerate(selected, start=1)
     ]
     dropped_full = [
-        _to_view(item, idx + len(selected))
+        _to_view(item, idx + len(selected), False)
         for idx, item in enumerate(dropped, start=1)
     ]
 
@@ -74,11 +78,18 @@ def _parse_rerank_results(body: Dict[str, Any]) -> List[Tuple[int, float]]:
     for row in raw_results:
         if not isinstance(row, dict):
             continue
-        idx = int(row.get("index", row.get("document_index", -1)))
+        try:
+            raw_idx = row.get("index", row.get("document_index", -1))
+            idx = int(raw_idx)
+            if isinstance(raw_idx, bool) or str(raw_idx) != str(idx):
+                continue
+            score = float(row.get("relevance_score", row.get("score")))
+        except (TypeError, ValueError, OverflowError):
+            continue
         if idx < 0:
             continue
-        score = row.get("relevance_score", row.get("score", 0.0))
-        parsed.append((idx, float(score)))
+        if math.isfinite(score):
+            parsed.append((idx, score))
 
     parsed.sort(key=lambda x: x[1], reverse=True)
     return parsed
@@ -161,7 +172,7 @@ def rerank_top_k(
         "model": model,
         "query": topic,
         "documents": documents,
-        "top_n": min(max(top_k, 1), len(documents)),
+        "top_n": len(documents),
     }
 
     resp = requests.post(endpoint, json=payload, headers=headers, timeout=timeout_sec)
@@ -171,26 +182,28 @@ def rerank_top_k(
     if not ranked:
         raise RuntimeError("rerank API 返回为空或格式无法解析")
 
-    selected: List[Dict[str, Any]] = []
     ranked_items: List[Dict[str, Any]] = []
-    for idx, score in ranked[: max(top_k, 0)]:
-        if idx >= len(candidates):
-            continue
-        row = dict(candidates[idx])
-        row["bge_reranker_score"] = round(float(score), 6)
-        selected.append(row)
-
+    seen = set()
     for idx, score in ranked:
-        if idx >= len(candidates):
+        if idx >= len(candidates) or idx in seen:
             continue
+        seen.add(idx)
         row = dict(candidates[idx])
         row["bge_reranker_score"] = round(float(score), 6)
         ranked_items.append(row)
 
-    if not selected:
+    if not ranked_items:
         raise RuntimeError("rerank 后无有效候选")
-
-    rank_pack = _pack_ranked_items(ranked_items, "bge_reranker_score", top_k)
+    selected = ranked_items[:max(top_k, 0)]
+    returned_count = len(ranked_items)
+    for idx, candidate in enumerate(candidates):
+        if idx not in seen:
+            row = dict(candidate)
+            row.pop("bge_reranker_score", None)
+            row["_audit_reason"] = "not_returned_by_api"
+            ranked_items.append(row)
+    # Missing API results are audited, never promoted into the selected evidence.
+    rank_pack = _pack_ranked_items(ranked_items, "bge_reranker_score", len(selected))
     return selected, {
         "enabled": True,
         "mode": "api",
@@ -199,6 +212,8 @@ def rerank_top_k(
         "top_k": top_k,
         "input": len(candidates),
         "selected": len(selected),
+        "returned_count": returned_count,
+        "unscored_count": len(candidates) - returned_count,
         **rank_pack,
     }
 

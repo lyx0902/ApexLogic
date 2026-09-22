@@ -1,5 +1,8 @@
 """Shared embedding API with strict index, dimension and finite-value validation."""
 from typing import List, Tuple
+import hashlib
+import os
+import time
 import requests
 import numpy as np
 
@@ -14,7 +17,7 @@ def validate_vectors(vectors):
     return array
 
 
-def embed_texts(
+def _request_embeddings(
     texts: List[str],
     model: str,
     api_base: str,
@@ -56,6 +59,62 @@ def embed_texts(
         raise RuntimeError("embedding 数量与输入数量不一致")
     validate_vectors(ordered)
     return ordered
+
+
+def embed_texts(texts: List[str], model: str, api_base: str, api_key: str,
+                timeout_sec: float) -> List[List[float]]:
+    """Reuse exact text vectors; retain batching for all misses and validate mixed dimensions."""
+    from core.cache import get_cache, key_for, ttl_setting, count
+    cache = get_cache()
+    ttl = ttl_setting("APEXLOGIC_EMBED_CACHE_TTL", 604800)
+    endpoint = _resolve_embeddings_endpoint(api_base)
+    # Isolate credentials' model deployments without storing the secret itself.
+    identity = [model, endpoint, hashlib.sha256(api_key.encode()).hexdigest(),
+                os.getenv("APEXLOGIC_EMBED_CACHE_VERSION", "1")]
+
+    def request(batch):
+        count("embedding.external_calls")
+        count("embedding.external_texts", len(batch))
+        start = time.monotonic()
+        try:
+            return _request_embeddings(batch, model, api_base, api_key, timeout_sec)
+        finally:
+            count("embedding.external_seconds", round(time.monotonic() - start, 4))
+
+    if cache is None or not texts:
+        count("embedding.disabled_bypass", len(texts))
+        return request(texts)
+
+    def valid(value):
+        try:
+            return isinstance(value, list) and validate_vectors([value]).shape[0] == 1
+        except (ValueError, TypeError):
+            return False
+
+    unique = list(dict.fromkeys(texts))
+    keys = {text: key_for("embedding", [identity, text]) for text in unique}
+    vectors = {}
+    for text in unique:
+        doc = cache.read(keys[text], ttl, valid)
+        if doc is not None:
+            vectors[text] = doc["value"]
+    count("embedding.hits", len(vectors))
+    missing = [text for text in unique if text not in vectors]
+    count("embedding.misses", len(missing))
+    fresh = request(missing) if missing else []
+    for text, vector in zip(missing, fresh):
+        vectors[text] = vector
+    try:
+        validate_vectors([vectors[text] for text in unique])
+    except ValueError:
+        # A provider changed dimensions under the same model name: refresh the whole batch.
+        count("embedding.dimension_refresh")
+        fresh = request(unique)
+        missing = unique
+        vectors = dict(zip(unique, fresh))
+    for text, vector in zip(missing, fresh):
+        cache.write(keys[text], vector, ttl)
+    return [vectors[text] for text in texts]
 
 
 def _resolve_embeddings_endpoint(api_base: str) -> str:

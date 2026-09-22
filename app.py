@@ -248,6 +248,8 @@ def save_run_to_history(
         "run_metadata": {
             "iteration_snapshots": iteration_snapshots or [],
             "memory_stats": final_state.get("memory_stats", {}),
+            "cache_stats": final_state.get("cache_stats", {}),
+            "memory_first": final_state.get("memory_first", {}),
             "memory_used_ids": final_state.get("memory_used_ids", []),
             "memory_publication": final_state.get("memory_publication", {}),
             # 推理链数据
@@ -375,6 +377,12 @@ def show_history_view(data: dict) -> None:
 
     # ── IRCoT 推理链参考文献（历史记录）────────────────────────────────────
     run_metadata = data.get("run_metadata", {})
+    if run_metadata.get("cache_stats"):
+        with st.expander("历史缓存统计"):
+            st.json(run_metadata["cache_stats"])
+    if run_metadata.get("memory_first"):
+        with st.expander("历史记忆优先检索"):
+            st.json(run_metadata["memory_first"])
     if run_metadata.get("memory_stats") or run_metadata.get("memory_publication"):
         with st.expander("历史记忆使用记录"):
             st.json({k: run_metadata.get(k) for k in ("memory_stats", "memory_used_ids", "memory_publication")})
@@ -489,11 +497,14 @@ def show_history_view(data: dict) -> None:
                                 if skipped:
                                     st.markdown(
                                         f"**子问题 {sq_id}：** {question}  \n"
-                                        f"*（与已有查询高度重叠，已跳过）*"
+                                        + ("*（已有原始记忆证据覆盖，省去本次搜索）*" if sub.get("search_skipped")
+                                         else "*（与已有查询高度重叠，已跳过）*")
                                     )
                                 else:
                                     st.markdown(
-                                        f"**子问题 {sq_id}：** {question} — 补搜 {new_docs_count} 条"
+                                        f"**子问题 {sq_id}：** {question} — "
+                                        + ("已纳入缺口搜索，结果统一统计" if new_docs_count is None
+                                           else f"补搜 {new_docs_count} 条")
                                     )
                                     for doc in retrieved_docs:
                                         doc_title = doc.get("title", "") or "未知标题"
@@ -960,11 +971,14 @@ try:
                                 if skipped:
                                     st.markdown(
                                         f"**子问题 {sq_id}：** {question}  \n"
-                                        f"*（与已有查询高度重叠，已跳过）*"
+                                        + ("*（已有原始记忆证据覆盖，省去本次搜索）*" if sub.get("search_skipped")
+                                         else "*（与已有查询高度重叠，已跳过）*")
                                     )
                                 else:
                                     st.markdown(
-                                        f"**子问题 {sq_id}：** {question} — 补搜 {new_docs_count} 条"
+                                        f"**子问题 {sq_id}：** {question} — "
+                                        + ("已纳入缺口搜索，结果统一统计" if new_docs_count is None
+                                           else f"补搜 {new_docs_count} 条")
                                     )
                                     for doc in retrieved_docs:
                                         doc_title = doc.get("title", "") or "未知标题"
@@ -1231,6 +1245,23 @@ attempts = runner.repository.attempts(run_id)
 known_seconds = sum(a["elapsed_seconds"] or 0 for a in attempts)
 st.caption(f"已记录执行时间：{known_seconds:.1f} 秒；执行尝试：{len(attempts)} 次。强制退出的未记录时长不计入。")
 
+
+cache_stats = final_state.get("cache_stats", {})
+if cache_stats:
+    st.caption(f"缓存：搜索命中 {cache_stats.get('search.hits', 0)} 次，"
+               f"实际搜索调用 {cache_stats.get('search.external_calls', 0)} 次；"
+               f"向量命中 {cache_stats.get('embedding.hits', 0)} 条。")
+    with st.expander("缓存命中与降级统计"):
+        st.caption("统计来自已完成节点；中断节点未提交的调用、节点外记忆发布不计入。")
+        st.json(cache_stats)
+
+memory_first = final_state.get("memory_first", {})
+if memory_first and memory_first.get("mode") != "off":
+    st.caption(f"记忆优先：{memory_first.get('covered', 0)} 个子问题具备可复用证据，"
+               f"{memory_first.get('searches_skipped', 0)} 个子问题省去预计划搜索。")
+    with st.expander("记忆优先检索与补搜原因"):
+        st.caption("省去的是子问题的预计划搜索；IRCoT 仍可发现新缺口并补搜。")
+        st.json(memory_first)
 
 memory_stats = final_state.get("memory_stats", {})
 memory_publication = final_state.get("memory_publication", {})

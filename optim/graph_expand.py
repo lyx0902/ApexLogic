@@ -43,6 +43,16 @@ _STOPWORDS = {
     "show", "propose", "paper", "study", "result", "model", "based",
 }
 
+# Remove boilerplate before tokenization; general stopwords below remain whole-token filters.
+_WEB_NOISE = {
+    "http", "https", "www", "com", "cn", "org", "net", "html", "htm",
+    "csdn", "zhihu", "blog", "blogs", "copyright", "read more", "click here",
+    "博客", "属于", "文章", "原文", "转载", "阅读", "点击", "收藏", "点赞",
+    "评论", "登录", "注册", "关注", "分享", "作者", "发布时间", "展开全文",
+    "查看更多", "版权所有", "网站", "首页", "目录", "链接",
+}
+_STOPWORDS |= _WEB_NOISE
+
 # 最短有效词长（字符数）
 _MIN_TOKEN_LEN = 2
 # 每篇文档最多抽取的概念数（控制图规模）
@@ -54,8 +64,17 @@ _PAGERANK_ALPHA = 0.85
 def _extract_concepts(text: str) -> List[str]:
     """从文本中提取候选概念词（中英文混合简单策略）。"""
 
-    # 英文短语：2-4 个单词组成的名词短语（连字符视为单词内部）
-    en_phrases = re.findall(r"\b[A-Za-z][A-Za-z\-]{1,}\b(?:\s+[A-Za-z][A-Za-z\-]{1,}\b){0,2}", text)
+    # Strip complete URLs before tokenizing so host/path fragments cannot become concepts.
+    text = re.sub(r"(?i)(?:https?://|www\.)[^\s<>\u4e00-\u9fff]+", " ", text)
+    text = re.sub(r"(?i)\b(?:[a-z0-9-]+\.)+(?:com|org|net|cn|io|edu|gov)(?:/[^\s<>\u4e00-\u9fff]*)?", " ", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    # Preserve alphanumeric terms (3NF, 2PL) and split boilerplate out of phrases.
+    for word in sorted(_WEB_NOISE, key=len, reverse=True):
+        if word.isascii():
+            text = re.sub(r"(?i)\b" + re.escape(word) + r"\b", " | ", text)
+        elif len(word) >= 2:
+            text = text.replace(word, " | ")
+    en_phrases = re.findall(r"\b(?=[A-Za-z0-9-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9-]+\b(?:\s+(?=[A-Za-z0-9-]*[A-Za-z])[A-Za-z0-9][A-Za-z0-9-]+\b){0,2}", text)
     # 中文词：2-6 个汉字组成的词
     zh_phrases = re.findall(r"[\u4e00-\u9fff]{2,6}", text)
 
@@ -144,7 +163,7 @@ def expand_queries_from_contexts(
     if not _NX_AVAILABLE:
         return []
 
-    if not contexts:
+    if not contexts or top_k <= 0:
         return []
 
     G = _build_cooccurrence_graph(contexts)

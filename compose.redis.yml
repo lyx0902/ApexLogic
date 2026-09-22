@@ -1,0 +1,18 @@
+services:
+  redis:
+    image: redis:8@sha256:8a1efc5f479551822b47424ccae982026b633f28818eab0387348120a61e10e2
+    environment:
+      REDIS_PASSWORD: ${APEXLOGIC_REDIS_PASSWORD:?Set APEXLOGIC_REDIS_PASSWORD first}
+      REDISCLI_AUTH: ${APEXLOGIC_REDIS_PASSWORD:?Set APEXLOGIC_REDIS_PASSWORD first}
+    ports:
+      - "127.0.0.1:${APEXLOGIC_REDIS_PORT:-6379}:6379"
+    command:
+      - /bin/sh
+      - -c
+      - 'exec redis-server --requirepass "$$REDIS_PASSWORD" --maxmemory 256mb --maxmemory-policy allkeys-lru --save "" --appendonly no'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+    restart: unless-stopped

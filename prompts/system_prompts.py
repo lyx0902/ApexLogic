@@ -418,6 +418,9 @@ def build_writer_user_prompt(
             content = (item.get("content", "") or "")[:200]
             # 优先用精炼摘要，摘要不足时补原文片段
             body = summary if len(summary) > 80 else (content[:400] if not summary else summary)
+            if item.get("memory_required"):
+                # Already bounded by the aggregate memory character budget.
+                body = item.get("content", "") or body
             chunks.append(f"[{citation}] {title}\n  {body}")
         else:
             chunks.append(f"[S{idx}] {str(item)[:400]}")
@@ -503,6 +506,8 @@ def build_writer_user_prompt_eval(
             citation = item.get("citation_id", f"S{idx}")
             title = (item.get("title", "") or "")[:80]
             summary = (item.get("core_summary", "") or item.get("content", "") or "")[:300]
+            if item.get("memory_required"):
+                summary = item.get("content", "") or summary
             chunks.append(f"[{citation}] {title}: {summary}")
         else:
             chunks.append(f"[S{idx}] {str(item)[:300]}")

@@ -29,6 +29,7 @@ AQD_RESULTS_PER_SUBQ  (默认 "3") – 每个子问题的 DDG 检索结果数
 """
 
 from __future__ import annotations
+from optim.query_text import strip_list_marker
 
 import json
 from core.run_config import setting
@@ -167,7 +168,7 @@ def _sanitize_json(text: str) -> str:
 
 
 def _parse_decompose_response(
-    content: str, n_expected: int
+    content: str, n_expected: int, *, strict: bool = False
 ) -> List[Dict[str, Any]]:
     """解析 LLM 分解输出，提取子问题列表。
 
@@ -182,6 +183,22 @@ def _parse_decompose_response(
             if isinstance(obj, dict):
                 sub_qs = obj.get("sub_questions", [])
                 if isinstance(sub_qs, list) and sub_qs:
+                    if strict:
+                        if len(sub_qs) > n_expected or any(
+                            not isinstance(q, dict) or type(q.get("id")) is not int
+                            or any(not isinstance(q.get(k), str) or not q[k].strip()
+                                   for k in ("question", "search_query"))
+                            or not isinstance(q.get("depends_on"), list)
+                            or any(type(d) is not int for d in q["depends_on"])
+                            for q in sub_qs
+                        ):
+                            return []
+                        ids = {q["id"] for q in sub_qs}
+                        if len(ids) != len(sub_qs) or any(
+                            d not in ids or d == q["id"] for q in sub_qs for d in q["depends_on"]
+                        ):
+                            return []
+                        return sub_qs
                     validated: List[Dict[str, Any]] = []
                     for i, sq in enumerate(sub_qs, start=1):
                         if not isinstance(sq, dict):
@@ -203,9 +220,11 @@ def _parse_decompose_response(
         except Exception:
             pass
 
+    if strict:
+        return []  # A lossy fallback must never justify suppressing searches.
     # 正则回退：每行视为一个子问题查询
     lines = [
-        line.strip().lstrip("-•*0123456789. ").strip()
+        strip_list_marker(line)
         for line in content.splitlines()
         if line.strip()
         and not line.strip().startswith("{")
@@ -273,6 +292,7 @@ class AdaptiveQueryPlanner:
         topic: str,
         contexts: List[Dict[str, Any]],
         existing_queries: List[str],
+        pre_search: bool = False,
     ) -> List[Dict[str, Any]]:
         """调用 LLM 将研究主题分解为子问题列表。
 
@@ -287,6 +307,11 @@ class AdaptiveQueryPlanner:
             n_sub_questions=self.max_sub_questions,
             existing_queries=existing_queries,
         )
+        if pre_search:
+            user_prompt += ("\n这是联网前规划：子问题合起来必须覆盖用户请求的全部要求，尤其不能遗漏示例、"
+                            "比较维度或限制条件。不要为凑数量引入用户未要求的研究方向。"
+                            "每个问题写明实体和范围；未知实体不得猜测，应保留真实的事实依赖。"
+                            "用户预设不一定正确，可以把核实或纠正预设列为子问题。")
 
         try:
             response = llm.invoke(
@@ -307,7 +332,7 @@ class AdaptiveQueryPlanner:
             if not content:
                 return []
 
-            return _parse_decompose_response(content, self.max_sub_questions)
+            return _parse_decompose_response(content, self.max_sub_questions, strict=pre_search)
 
         except Exception:
             return []
@@ -325,6 +350,13 @@ class AdaptiveQueryPlanner:
             return []
 
     # ── 公开接口 ──────────────────────────────────────────────────────
+
+    def plan_before_search(self, topic: str) -> List[Dict[str, Any]]:
+        """Plan self-contained subquestions without requiring an initial web search."""
+        llm = self._make_llm()
+        if llm is None:
+            return []
+        return _topological_sort(self._call_decompose_llm(llm, topic, [], [], pre_search=True))
 
     def run(
         self,

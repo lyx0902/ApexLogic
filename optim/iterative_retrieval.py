@@ -28,6 +28,7 @@ GAP_RESULTS_PER_QUERY        (默认 "4")  – 每条补充查询的 DDG 结果�
 """
 
 from __future__ import annotations
+from optim.query_text import strip_list_marker
 
 import json
 from core.run_config import setting
@@ -155,7 +156,7 @@ def _parse_llm_response(content: str) -> Tuple[str, List[str]]:
 
     # 正则回退：每行一条查询（去除序号、破折号等前缀）
     lines = [
-        l.strip().lstrip("-•*0123456789. ").strip()
+        strip_list_marker(l)
         for l in content.splitlines()
         if l.strip() and not l.strip().startswith("{") and not l.strip().startswith("}")
     ]

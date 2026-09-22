@@ -20,4 +20,15 @@ appstats/
 data/
 docs/
 tests/
+!tests/
+tests/*
+!tests/test_cache.py
+!tests/conftest.py
+!tests/test_redis_integration.py
+!tests/test_retrieval_cleanup.py
+!tests/test_memory_first.py
+!docs/
+docs/*
+!docs/redis-cache.md
+!docs/memory-first.md
 migrations/

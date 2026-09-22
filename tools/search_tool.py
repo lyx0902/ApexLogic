@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.run_config import setting
+from core.cache import cached_search
 import re
 from typing import Any, Dict, List
 
@@ -48,6 +49,7 @@ def _normalize_generic(source: str, title: str, url: str, content: str) -> Dict[
     }
 
 
+@cached_search("duckduckgo:v1")
 def duckduckgo_search(query: str, max_results: int = 4) -> List[Dict[str, Any]]:
     """DuckDuckGo 免费网页搜索（无需 API Key）。"""
 
@@ -73,6 +75,7 @@ def duckduckgo_search(query: str, max_results: int = 4) -> List[Dict[str, Any]]:
     return results
 
 
+@cached_search("tavily:advanced:raw:v1")
 def tavily_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
     """执行 Tavily 检索并返回标准化结果。
 

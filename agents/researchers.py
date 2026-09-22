@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.run_config import configured_node, setting
+from optim.query_text import strip_list_marker
 import re
 from typing import Any, Dict, List, Optional
 
@@ -133,7 +134,7 @@ def _rewrite_queries_with_llm(
 
     rewritten: List[str] = []
     for line in content.splitlines():
-        item = line.strip().lstrip("-0123456789. ")
+        item = strip_list_marker(line)
         if item:
             rewritten.append(item)
 
@@ -155,7 +156,7 @@ def _normalize_context_item(item: Dict[str, Any] | str) -> Dict[str, Any]:
             "source": str(item.get("source", "unknown")),
             "content": str(item.get("content", "")),
             **{key: item[key] for key in ("origin", "memory_id", "memory_version", "memory_source_run_id",
-                "memory_observed_at", "memory_valid_until", "memory_score") if key in item},
+                "memory_observed_at", "memory_valid_until", "memory_score", "memory_required", "cache_hit", "cache_fetched_at") if key in item},
         }
     return {
         "title": "text_context",
@@ -273,7 +274,7 @@ def _dedupe_and_index_contexts(
         item = _normalize_context_item(raw)
         url_key = item.get("url", "").strip().lower()
         fallback_key = f"{item.get('source','')}|{item.get('title','').strip().lower()}"
-        key = url_key or fallback_key
+        key = ("required-memory:" + str(item["memory_id"])) if item.get("memory_required") else (url_key or fallback_key)
         if key in seen:
             continue
         seen.add(key)
@@ -460,14 +461,34 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     query_budget = int(setting("SEARCH_QUERY_BUDGET", "3"))
     effective_queries = queries[:query_budget]
 
+    from memory.first import prepare_memory_first, retain_required_memory
+    early = prepare_memory_first(state, AdaptiveQueryPlanner())
+    memory_first = early["summary"]
+    memory_hits, memory_stats = early["hits"], early["stats"]
+    if memory_first["applied"]:
+        effective_queries = [q["search_query"] for q in early["remaining"]][:query_budget]
+        queries = [q["search_query"] for q in early["questions"]]
+
     # ── MAB：从环境变量获取基础预算，Thompson Sampling 分配本轮预算 ───
     q_count = max(len(effective_queries), 1)
     base_budgets, _ = _resolve_base_budgets(q_count)
     mab_budgets = mab.allocate_budgets(base_budgets)
 
-    contexts, errors, bge_stage_summary = _collect_broad_contexts(
-        effective_queries, errors, override_budgets=mab_budgets
-    )
+    if memory_first["applied"] and not effective_queries:
+        contexts, bge_stage_summary = [], {"broad_total": 0, "broad_attempted": 0}
+        mab_budgets = {key: 0 for key in mab_budgets}
+    else:
+        contexts, errors, bge_stage_summary = _collect_broad_contexts(
+            effective_queries, errors, override_budgets=mab_budgets
+        )
+    if memory_first["applied"]:
+        for q in early["remaining"][query_budget:]:
+            try:
+                got = duckduckgo_search(q["search_query"], max_results=int(setting("AQD_RESULTS_PER_SUBQ", "3")))
+                contexts.extend(got)
+            except Exception as exc:
+                errors = _append_error(errors, f"记忆未覆盖子问题补搜失败: {type(exc).__name__}")
+    contexts = list(contexts) + memory_hits
 
     # 确保在无外部依赖时流程仍然有上下文可用
     if not contexts:
@@ -485,7 +506,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     # ── 图扩展查询：从已检索文档构建概念共现图，补搜核心概念方向 ──────
     graph_expand_k = int(setting("GRAPH_EXPAND_QUERIES", "2"))
     graph_expand_summary: Dict[str, Any] = {"enabled": False, "extra_queries": [], "extra_contexts": 0}
-    if graph_expand_k > 0 and normalized_contexts:
+    if graph_expand_k > 0 and normalized_contexts and not memory_first["applied"]:
         try:
             extra_queries = expand_queries_from_contexts(
                 topic=topic,
@@ -517,8 +538,16 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     # ── 自适应查询分解（AQD）: 分解主题→子问题→逐一补搜 ──────────────
     aqd_enabled = setting("AQD_ENABLED", "1").strip() == "1"
     query_plan: Dict[str, Any] = {"enabled": False}
+    if memory_first["applied"]:
+        graph_expand_summary = {"enabled": False, "reason": "memory_first_gap_plan"}
+        query_plan = {"enabled": True, "mode": "memory_first", "sub_questions_count": len(early["questions"]),
+                      "execution_order": [q["id"] for q in early["questions"]],
+                      "total_new_docs": sum(c.get("origin") != "memory" for c in contexts if isinstance(c, dict)),
+                      "sub_results": [{**q, "skipped": q["search_skipped"], "new_docs": None,
+                                       "search_stage": "memory" if q["search_skipped"] else "broad_or_gap_search"}
+                                      for q in memory_first["subquestions"]]}
 
-    if aqd_enabled and normalized_contexts:
+    if aqd_enabled and normalized_contexts and not memory_first["applied"]:
         try:
             max_sub_questions = int(setting("AQD_MAX_SUB_QUESTIONS", "4"))
             results_per_subq = int(setting("AQD_RESULTS_PER_SUBQ", "3"))
@@ -608,8 +637,9 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
 
     # Online evidence wins URL deduplication; recalled items retain immutable provenance.
     from memory.service import recall_for_state
-    memory_hits, memory_stats = recall_for_state(state)
-    if memory_hits:
+    if memory_stats is None:
+        memory_hits, memory_stats = recall_for_state(state)
+    if memory_hits and not early["hits"]:
         normalized_contexts = _dedupe_and_index_contexts(list(normalized_contexts) + memory_hits)
 
     retriever_top_k = int(setting("BGE_RETRIEVER_TOP_K", "20"))
@@ -673,7 +703,11 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             "error": str(exc),
         }
 
-    filtered_contexts = list(reranked_10)
+    filtered_contexts = retain_required_memory(list(reranked_10), normalized_contexts, reranker_top_k)
+    memory_first["retained_ids"] = [c["memory_id"] for c in filtered_contexts if c.get("memory_required")]
+    if memory_first["retained_ids"]:
+        reranker_summary["policy_retained_memory_ids"] = memory_first["retained_ids"]
+        reranker_summary["effective_selected"] = len(filtered_contexts)
     for idx, item in enumerate(filtered_contexts, start=1):
         item["citation_id"] = f"S{idx}"
 
@@ -741,6 +775,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     return {
         "search_queries": queries,
         "memory_stats": memory_stats,
+        "memory_first": memory_first,
         "memory_query_ids": list(dict.fromkeys(state.get("memory_query_ids", []) + ([memory_stats["query_id"]] if memory_stats.get("query_id") else []))),
         "retrieved_context": filtered_contexts,
         "source_quality_summary": source_quality_summary,
