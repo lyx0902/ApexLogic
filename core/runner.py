@@ -99,7 +99,7 @@ class ResearchRunner:
         elif record["status"] == "running":
             self.repository.update(record["run_id"], status="interrupted")
 
-    def _memory_result(self, record, snapshot, *, publish=False):
+    def _memory_result(self, record, snapshot, *, publish=False, trigger="direct"):
         state = dict(snapshot.values)
         options = record["run_config"].get("memory", {})
         if not options.get("enabled") or snapshot.next:
@@ -108,11 +108,16 @@ class ResearchRunner:
             from memory.service import MemoryService
             service = MemoryService(record["run_config"])
             checkpoint_id = snapshot.config["configurable"]["checkpoint_id"]
-            receipt = (service.publish(state, checkpoint_id, snapshot.created_at) if publish else
+            receipt = (service.publish(state, checkpoint_id, snapshot.created_at, trigger=trigger) if publish else
                        service.repo.publication(record["run_id"], checkpoint_id, options["namespace"]))
             if receipt:
                 state["memory_publication"] = receipt
                 state["memory_write_ids"] = receipt["item_ids"]
+            try:
+                state["memory_publication_attempts"] = service.repo.publication_attempts(
+                    record["run_id"], checkpoint_id, options["namespace"])
+            except Exception as log_exc:
+                state["memory_publication_log_error"] = type(log_exc).__name__
         except Exception as exc:
             state["memory_publication"] = {"status": "failed", "error": type(exc).__name__}
         return state
@@ -145,7 +150,7 @@ class ResearchRunner:
                 snapshot = self._snapshot(record, graph, saver)
                 self._reconcile(record, snapshot)
                 if snapshot is not None and not snapshot.next:
-                    yield RunEvent("complete", None, self._memory_result(record, snapshot, publish=True))
+                    yield RunEvent("complete", None, self._memory_result(record, snapshot, publish=True, trigger="reopen_completed"))
                     return
                 state = dict(snapshot.values) if snapshot else create_initial_state(
                     record["topic"], output_mode=record["run_config"]["output_mode"])
@@ -177,7 +182,7 @@ class ResearchRunner:
                     self.repository.update(run_id, status="interrupted", last_error=error)
                     self.repository.finish_attempt(attempt_id, "interrupted", time.monotonic() - started, error)
                     raise
-                yield RunEvent("complete", None, self._memory_result(record, saved, publish=True))
+                yield RunEvent("complete", None, self._memory_result(record, saved, publish=True, trigger="research_completed"))
 
     def run(self, run_id):
         final = None

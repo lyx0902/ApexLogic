@@ -8,6 +8,7 @@ class ResearchStateCore(TypedDict):
 
     topic: str
     search_queries: List[str]
+    planned_search_queries: List[str]
     retrieved_context: List[Dict[str, Any] | str]
     draft: str
     critique_feedback: str

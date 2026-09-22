@@ -250,8 +250,12 @@ def save_run_to_history(
             "memory_stats": final_state.get("memory_stats", {}),
             "cache_stats": final_state.get("cache_stats", {}),
             "memory_first": final_state.get("memory_first", {}),
+            "planned_search_queries": final_state.get("planned_search_queries", []),
+            "search_queries": final_state.get("search_queries", []),
             "memory_used_ids": final_state.get("memory_used_ids", []),
             "memory_publication": final_state.get("memory_publication", {}),
+            "memory_publication_attempts": final_state.get("memory_publication_attempts", []),
+            "memory_publication_log_error": final_state.get("memory_publication_log_error"),
             # 推理链数据
             "reasoning_enabled": final_state.get("reasoning_enabled", False),
             "reasoning_chains": final_state.get("reasoning_chains", []),
@@ -307,6 +311,62 @@ def _history_label(record: dict) -> str:
     score = data.get("weighted_score", 0.0)
     ok = "✅" if data.get("is_satisfactory") else ("⚠️ 有限结论" if data.get("answer_status") == "limited" else "❌")
     return f"{ts} · {topic_short} · {score:.2f}分 {ok}"
+
+
+def render_publication_attempts(state):
+    attempts = state.get("memory_publication_attempts", [])
+    if state.get("memory_publication_log_error") or state.get("memory_publication", {}).get("attempt_log_error"):
+        st.warning("记忆发布诊断日志未完整保存，请检查数据库；不影响已保存的研究报告。")
+    if not attempts:
+        fallback = state.get("memory_publication", {}).get("latest_attempt")
+        attempts = [fallback] if fallback else []
+    if not attempts:
+        return
+    stages = {"prepare_evidence":"准备证据", "check_existing_vectors":"检查已有向量",
+              "read_evidence":"读取证据", "embedding_request":"向量接口请求",
+              "write_vector":"写入向量", "finish_publication":"完成发布"}
+    triggers = {"research_completed":"研究结束自动发布", "reopen_completed":"打开完成结果重试", "direct":"直接调用"}
+    with st.expander("记忆发布尝试历史（最近 50 次）"):
+        for attempt in attempts:
+            done = attempt.get('completed_before', 0) + attempt.get('completed_this_attempt', 0)
+            status = attempt.get('status')
+            if status == 'running':
+                status = '尚未记录结束（可能执行中或已中断）'
+            st.caption(f"{attempt.get('started_at')} · {triggers.get(attempt.get('trigger'), '其他')} · {status}")
+            st.write(f"阶段：{stages.get(attempt.get('stage'), attempt.get('stage'))}；向量完成：{done}/{attempt.get('total') if attempt.get('total') is not None else '未知'}；本次新增：{attempt.get('completed_this_attempt', 0)}")
+            st.json(attempt)
+
+
+def render_aqd_subquestion(sub):
+    question = sub.get("question", "")
+    st.markdown(f"**子问题 {sub.get('id', '?')}：** {question}")
+    st.caption("规划查询：" + sub.get("search_query", ""))
+    if sub.get("skipped"):
+        st.caption("已有记忆覆盖，省去对应搜索" if sub.get("search_skipped") else "与已有查询重复，跳过独立补搜")
+    elif sub.get("search_unavailable"):
+        st.caption("本题未执行补搜：DuckDuckGo 工具不可用")
+    elif sub.get("new_docs") is None:
+        st.caption("旧记录未保存逐题资料，结果仅有汇总统计")
+    else:
+        st.caption(f"本题返回 {sub.get('new_docs', 0)} 条资料（去重前）")
+    for record in sub.get("search_records", []) + sub.get("matched_search_records", []):
+        status = "失败：" + record.get("error", "unknown") if record.get("status") == "failed" else "完成"
+        st.caption(f"{record.get('provider')} · {record.get('query')} · 请求上限 {record.get('requested_results')} · {status}")
+    for label, docs in (("搜索资料", sub.get("retrieved_docs", [])), ("召回记忆", sub.get("memory_docs", []))):
+        if not docs:
+            continue
+        st.markdown(f"**{label}**")
+        for doc in docs:
+            title = doc.get("title") or "未知标题"
+            url = doc.get("url") or ""
+            st.markdown(f"- [{title}]({url})" if url else f"- {title}")
+            if doc.get("search_provider"):
+                st.caption(f"来源：{doc['search_provider']} · 查询：{doc.get('query', '')}")
+            if "selected" in doc:
+                selection = f"入选普通写作上下文 [{doc.get('citation_id')}]" if doc['selected'] else "未入选普通写作上下文"
+                st.caption(selection + (" · 搜索缓存命中" if doc.get('cache_hit') else ""))
+            if doc.get("excerpt"):
+                st.text(doc["excerpt"])
 
 
 def show_history_view(data: dict) -> None:
@@ -380,6 +440,7 @@ def show_history_view(data: dict) -> None:
     if run_metadata.get("cache_stats"):
         with st.expander("历史缓存统计"):
             st.json(run_metadata["cache_stats"])
+    render_publication_attempts(run_metadata)
     if run_metadata.get("memory_first"):
         with st.expander("历史记忆优先检索"):
             st.json(run_metadata["memory_first"])
@@ -485,34 +546,11 @@ def show_history_view(data: dict) -> None:
                         h_sub_results = h_aqd.get("sub_results", [])
                         h_total_new = h_aqd.get("total_new_docs", 0)
                         with st.expander(
-                            f"🧩 AQD 查询分解详情（{len(h_sub_results)} 个子问题，共补搜 {h_total_new} 条）",
+                            f"🧩 AQD 查询分解详情（{len(h_sub_results)} 个子问题，返回 {h_total_new} 条资料（去重前））",
                             expanded=False,
                         ):
                             for sub in h_sub_results:
-                                sq_id = sub.get("id", "?")
-                                question = sub.get("question", "")
-                                new_docs_count = sub.get("new_docs", 0)
-                                skipped = sub.get("skipped", False)
-                                retrieved_docs = sub.get("retrieved_docs", [])
-                                if skipped:
-                                    st.markdown(
-                                        f"**子问题 {sq_id}：** {question}  \n"
-                                        + ("*（已有原始记忆证据覆盖，省去本次搜索）*" if sub.get("search_skipped")
-                                         else "*（与已有查询高度重叠，已跳过）*")
-                                    )
-                                else:
-                                    st.markdown(
-                                        f"**子问题 {sq_id}：** {question} — "
-                                        + ("已纳入缺口搜索，结果统一统计" if new_docs_count is None
-                                           else f"补搜 {new_docs_count} 条")
-                                    )
-                                    for doc in retrieved_docs:
-                                        doc_title = doc.get("title", "") or "未知标题"
-                                        doc_url = doc.get("url", "")
-                                        if doc_url:
-                                            st.markdown(f"&nbsp;&nbsp;- [{doc_title}]({doc_url})")
-                                        else:
-                                            st.markdown(f"&nbsp;&nbsp;- {doc_title}")
+                                render_aqd_subquestion(sub)
 
                     if h_ircot.get("enabled"):
                         h_hop_summaries = h_ircot.get("hop_summaries", [])
@@ -808,6 +846,7 @@ if inspect_run_id and not start_btn and not resume_run_id:
         if item.get("termination_reason") == "max_revisions":
             st.warning("研究已结束，但未达到评审通过条件。")
         saved = info["state"]
+        render_publication_attempts(saved)
         if saved.get("draft"):
             st.markdown(_inject_citation_hyperlinks(saved.get("final_report") or saved["draft"],
                 saved.get("retrieved_context", []), saved.get("reasoning_contexts", [])))
@@ -959,34 +998,11 @@ try:
                         sub_results_list = aqd.get("sub_results", [])
                         total_new_docs = aqd.get("total_new_docs", 0)
                         with st.expander(
-                            f"🧩 AQD 查询分解详情（{len(sub_results_list)} 个子问题，共补搜 {total_new_docs} 条）",
+                            f"🧩 AQD 查询分解详情（{len(sub_results_list)} 个子问题，返回 {total_new_docs} 条资料（去重前））",
                             expanded=False,
                         ):
                             for sub in sub_results_list:
-                                sq_id = sub.get("id", "?")
-                                question = sub.get("question", "")
-                                new_docs_count = sub.get("new_docs", 0)
-                                skipped = sub.get("skipped", False)
-                                retrieved_docs = sub.get("retrieved_docs", [])
-                                if skipped:
-                                    st.markdown(
-                                        f"**子问题 {sq_id}：** {question}  \n"
-                                        + ("*（已有原始记忆证据覆盖，省去本次搜索）*" if sub.get("search_skipped")
-                                         else "*（与已有查询高度重叠，已跳过）*")
-                                    )
-                                else:
-                                    st.markdown(
-                                        f"**子问题 {sq_id}：** {question} — "
-                                        + ("已纳入缺口搜索，结果统一统计" if new_docs_count is None
-                                           else f"补搜 {new_docs_count} 条")
-                                    )
-                                    for doc in retrieved_docs:
-                                        doc_title = doc.get("title", "") or "未知标题"
-                                        doc_url = doc.get("url", "")
-                                        if doc_url:
-                                            st.markdown(f"&nbsp;&nbsp;- [{doc_title}]({doc_url})")
-                                        else:
-                                            st.markdown(f"&nbsp;&nbsp;- {doc_title}")
+                                render_aqd_subquestion(sub)
 
                     # ── IRCoT 详情 ──────────────────────────────────────────
                     if ircot.get("enabled"):
@@ -1265,6 +1281,7 @@ if memory_first and memory_first.get("mode") != "off":
 
 memory_stats = final_state.get("memory_stats", {})
 memory_publication = final_state.get("memory_publication", {})
+render_publication_attempts(final_state)
 if memory_stats.get("enabled") or memory_publication:
     st.caption(f"跨任务记忆：召回 {memory_stats.get('recalled', 0)} 条，入选 {memory_stats.get('selected', 0)} 条，"
                f"报告引用 {len(final_state.get('memory_used_ids', []))} 条。")

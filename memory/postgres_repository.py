@@ -3,9 +3,11 @@ import json
 import hashlib
 from core.postgres import connect, require_schema, lock_key
 from memory.repository import now, conflict_shape
+from memory.publication_log import PublicationLog
 
 
-class PostgresMemoryRepository:
+class PostgresMemoryRepository(PublicationLog):
+    log_placeholder = '%s'
     def __init__(self):
         require_schema()
 

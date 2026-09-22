@@ -1,4 +1,5 @@
 from __future__ import annotations
+from optim.search_audit import search_with_audit, describe, annotate_selection
 
 from core.run_config import configured_node, setting
 from optim.query_text import strip_list_marker
@@ -368,7 +369,9 @@ def _collect_broad_contexts(
         extra = 1 if idx < (total % q_count) else 0
         return max(base + extra, 0)
 
+    search_records = []
     for idx, query in enumerate(queries):
+        record_start = len(search_records)
         ddg_k = _per_query(ddg_total, idx)
         arxiv_k = _per_query(arxiv_total, idx)
         tavily_k = _per_query(tavily_total, idx)
@@ -376,7 +379,7 @@ def _collect_broad_contexts(
         if ddg_k > 0:
             provider_stats["duckduckgo"]["planned"] += ddg_k
             try:
-                got = duckduckgo_search(query, max_results=ddg_k)
+                got = search_with_audit(search_records, "duckduckgo", query, ddg_k, duckduckgo_search)
                 contexts.extend(got)
                 provider_stats["duckduckgo"]["fetched"] += len(got)
             except Exception as exc:
@@ -386,7 +389,7 @@ def _collect_broad_contexts(
         if arxiv_k > 0:
             provider_stats["arxiv"]["planned"] += arxiv_k
             try:
-                got = arxiv_search(query, max_results=arxiv_k)
+                got = search_with_audit(search_records, "arxiv", query, arxiv_k, arxiv_search)
                 contexts.extend(got)
                 provider_stats["arxiv"]["fetched"] += len(got)
             except Exception as exc:
@@ -396,12 +399,15 @@ def _collect_broad_contexts(
         if tavily_k > 0:
             provider_stats["tavily"]["planned"] += tavily_k
             try:
-                got = tavily_search(query, max_results=tavily_k)
+                got = search_with_audit(search_records, "tavily", query, tavily_k, tavily_search)
                 contexts.extend(got)
                 provider_stats["tavily"]["fetched"] += len(got)
             except Exception as exc:
                 errors = _append_error(errors, f"Tavily 检索失败: {exc}")
                 provider_stats["tavily"]["failed"] += tavily_k
+
+        for record in search_records[record_start:]:
+            record["query_index"] = idx
 
     summary = {
         "broad_targets": {
@@ -421,6 +427,7 @@ def _collect_broad_contexts(
             + provider_stats["tavily"]["planned"]
         ),
         "broad_total": len(contexts),
+        "search_records": search_records,
     }
     return contexts, errors, summary
 
@@ -449,25 +456,24 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     )
     queries = list(seed_queries)
 
-    try:
-        queries = _rewrite_queries_with_llm(
-            topic, critique_feedback, seed_queries,
-            revision_directives=revision_directives,
-            revision_step=state.get("revision_step", 0),
-        )
-    except Exception as exc:
-        errors = _append_error(errors, f"DeepSeek 查询重写失败，已使用规则检索词: {exc}")
-
-    query_budget = int(setting("SEARCH_QUERY_BUDGET", "3"))
-    effective_queries = queries[:query_budget]
-
     from memory.first import prepare_memory_first, retain_required_memory
     early = prepare_memory_first(state, AdaptiveQueryPlanner())
     memory_first = early["summary"]
     memory_hits, memory_stats = early["hits"], early["stats"]
+    query_budget = int(setting("SEARCH_QUERY_BUDGET", "3"))
     if memory_first["applied"]:
-        effective_queries = [q["search_query"] for q in early["remaining"]][:query_budget]
         queries = [q["search_query"] for q in early["questions"]]
+        effective_queries = [q["search_query"] for q in early["remaining"]][:query_budget]
+    else:
+        try:
+            queries = _rewrite_queries_with_llm(
+                topic, critique_feedback, seed_queries,
+                revision_directives=revision_directives,
+                revision_step=state.get("revision_step", 0),
+            )
+        except Exception as exc:
+            errors = _append_error(errors, f"DeepSeek 查询重写失败，已使用规则检索词: {exc}")
+        effective_queries = queries[:query_budget]
 
     # ── MAB：从环境变量获取基础预算，Thompson Sampling 分配本轮预算 ───
     q_count = max(len(effective_queries), 1)
@@ -481,13 +487,21 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         contexts, errors, bge_stage_summary = _collect_broad_contexts(
             effective_queries, errors, override_budgets=mab_budgets
         )
+    search_records = list(bge_stage_summary.get("search_records", []))
+    graph_search_records = []
     if memory_first["applied"]:
+        for record in search_records:
+            record["subquestion_id"] = early["remaining"][record["query_index"]]["id"]
         for q in early["remaining"][query_budget:]:
+            record_start = len(search_records)
             try:
-                got = duckduckgo_search(q["search_query"], max_results=int(setting("AQD_RESULTS_PER_SUBQ", "3")))
+                got = search_with_audit(search_records, "duckduckgo", q["search_query"],
+                                        int(setting("AQD_RESULTS_PER_SUBQ", "3")), duckduckgo_search)
                 contexts.extend(got)
             except Exception as exc:
                 errors = _append_error(errors, f"记忆未覆盖子问题补搜失败: {type(exc).__name__}")
+            for record in search_records[record_start:]:
+                record["subquestion_id"] = q["id"]
     contexts = list(contexts) + memory_hits
 
     # 确保在无外部依赖时流程仍然有上下文可用
@@ -519,7 +533,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
                 extra_contexts: List[Dict[str, Any] | str] = []
                 for eq in extra_queries:
                     try:
-                        got = duckduckgo_search(eq, max_results=3)
+                        got = search_with_audit(graph_search_records, "duckduckgo", eq, 3, duckduckgo_search)
                         extra_contexts.extend(got)
                     except Exception as exc:
                         errors = _append_error(errors, f"图扩展查询 DDG 失败: {exc}")
@@ -540,12 +554,18 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     query_plan: Dict[str, Any] = {"enabled": False}
     if memory_first["applied"]:
         graph_expand_summary = {"enabled": False, "reason": "memory_first_gap_plan"}
+        sub_results = []
+        for q in memory_first["subquestions"]:
+            records = [r for r in search_records if r.get("subquestion_id") == q["id"]] if not q["search_skipped"] else []
+            docs = [d for r in records for d in r["retrieved_docs"]]
+            sub_results.append({**q, "skipped": q["search_skipped"], "new_docs": len(docs),
+                                "search_records": records, "retrieved_docs": docs,
+                                "memory_docs": [describe(h) for h in memory_hits if h["memory_id"] in q["recalled_ids"]],
+                                "search_stage": "memory" if q["search_skipped"] else "broad_or_gap_search"})
         query_plan = {"enabled": True, "mode": "memory_first", "sub_questions_count": len(early["questions"]),
                       "execution_order": [q["id"] for q in early["questions"]],
-                      "total_new_docs": sum(c.get("origin") != "memory" for c in contexts if isinstance(c, dict)),
-                      "sub_results": [{**q, "skipped": q["search_skipped"], "new_docs": None,
-                                       "search_stage": "memory" if q["search_skipped"] else "broad_or_gap_search"}
-                                      for q in memory_first["subquestions"]]}
+                      "total_new_docs": sum(len(r["retrieved_docs"]) for r in search_records),
+                      "sub_results": sub_results}
 
     if aqd_enabled and normalized_contexts and not memory_first["applied"]:
         try:
@@ -560,6 +580,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
                 topic=topic,
                 contexts=normalized_contexts,
                 existing_queries=effective_queries,
+                **({"sub_questions": early["questions"]} if early["questions"] else {}),
             )
             if aqd_contexts:
                 normalized_contexts = _dedupe_and_index_contexts(
@@ -568,6 +589,12 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             if query_plan.get("enabled"):
                 query_plan["contexts_before"] = contexts_before_aqd
                 query_plan["contexts_after"] = len(normalized_contexts)
+                for sub in query_plan.get("sub_results", []):
+                    if sub.get("skipped"):
+                        sq = sub["search_query"].lower()
+                        prior = [r for r in search_records if sq in r["query"].lower() or r["query"].lower() in sq]
+                        sub["matched_search_records"] = prior
+                        sub["retrieved_docs"] = [dict(d) for r in prior for d in r["retrieved_docs"]]
         except Exception as exc:
             errors = _append_error(errors, f"AQD 查询分解失败，已跳过: {exc}")
 
@@ -711,6 +738,8 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     for idx, item in enumerate(filtered_contexts, start=1):
         item["citation_id"] = f"S{idx}"
 
+    annotate_selection(query_plan, filtered_contexts)
+
     dropped_count = max(len(normalized_contexts) - len(filtered_contexts), 0)
 
     # ── MAB：计算各信源奖励并更新 Beta 参数 ──────────────────────────
@@ -773,7 +802,12 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     )
 
     return {
-        "search_queries": queries,
+        "planned_search_queries": queries,
+        "search_queries": list(dict.fromkeys(
+            [r["query"] for r in search_records + graph_search_records]
+            + [r["query"] for sub in query_plan.get("sub_results", []) for r in sub.get("search_records", [])]
+            + [q for hop in iterative_retrieval_summary.get("hop_summaries", []) for q in hop.get("gap_queries", [])]
+        )),
         "memory_stats": memory_stats,
         "memory_first": memory_first,
         "memory_query_ids": list(dict.fromkeys(state.get("memory_query_ids", []) + ([memory_stats["query_id"]] if memory_stats.get("query_id") else []))),

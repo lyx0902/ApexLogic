@@ -107,6 +107,8 @@ def prepare_memory_first(state, planner, *, service=None, judge=None):
             or len({q["id"] for q in questions}) != len(questions)):
             summary["status"] = "plan_failed"
             return result
+        # Reuse a valid plan even if a later recall or coverage step fails.
+        result["questions"] = questions
         hits, by_question, recalls = {}, {}, []
         remaining_chars = options["char_budget"]
         for q in questions:

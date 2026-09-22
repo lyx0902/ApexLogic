@@ -6,6 +6,7 @@ import hashlib
 import re
 from pathlib import Path
 import sqlite3
+from memory.publication_log import PublicationLog, SCHEMA
 
 
 def now():
@@ -22,11 +23,12 @@ def conflict_shape(text):
     return "".join(shape.split()), numbers, negated
 
 
-class MemoryRepository:
+class MemoryRepository(PublicationLog):
     def __init__(self, data_dir):
         self.path = Path(data_dir) / "memory.sqlite"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
+            db.executescript(SCHEMA)
             db.executescript("""
             CREATE TABLE IF NOT EXISTS memory_items (
                 id TEXT PRIMARY KEY, namespace TEXT NOT NULL, url TEXT NOT NULL,

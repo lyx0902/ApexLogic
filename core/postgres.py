@@ -141,5 +141,13 @@ def initialize():
             if row is None:
                 conn.execute(sql)
                 conn.execute("INSERT INTO schema_migrations VALUES (1,%s)", (checksum,))
+            from memory.publication_log import SCHEMA
+            log_checksum = hashlib.sha256(SCHEMA.encode()).hexdigest()
+            log_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=2").fetchone()
+            if log_version and log_version['checksum'] != log_checksum:
+                raise RuntimeError("Publication log migration checksum differs")
+            if log_version is None:
+                conn.execute(SCHEMA)
+                conn.execute("INSERT INTO schema_migrations VALUES (2,%s)", (log_checksum,))
         conn.execute("SET search_path TO apexlogic_checkpoints,public")
         PostgresSaver(conn).setup()

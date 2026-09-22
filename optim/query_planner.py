@@ -363,6 +363,7 @@ class AdaptiveQueryPlanner:
         topic: str,
         contexts: List[Dict[str, Any]],
         existing_queries: Optional[List[str]] = None,
+        sub_questions: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """执行自适应查询分解与检索。
 
@@ -381,19 +382,18 @@ class AdaptiveQueryPlanner:
         if not contexts:
             return [], {"enabled": False, "reason": "no_initial_contexts"}
 
-        llm = self._make_llm()
-        if llm is None:
-            return [], {"enabled": False, "reason": "llm_unavailable"}
-
         existing_set = set(q.lower() for q in (existing_queries or []))
 
         # 1. 分解主题为子问题
-        sub_questions = self._call_decompose_llm(
-            llm=llm,
-            topic=topic,
-            contexts=contexts,
-            existing_queries=existing_queries or [],
-        )
+        reused_plan = sub_questions is not None
+        if sub_questions is None:
+            llm = self._make_llm()
+            if llm is None:
+                return [], {"enabled": False, "reason": "llm_unavailable"}
+            sub_questions = self._call_decompose_llm(
+                llm=llm, topic=topic, contexts=contexts,
+                existing_queries=existing_queries or [],
+            )
 
         if not sub_questions:
             return [], {"enabled": False, "reason": "decompose_failed"}
@@ -405,6 +405,7 @@ class AdaptiveQueryPlanner:
         all_gap_contexts: List[Dict[str, Any]] = []
         sub_results: List[Dict[str, Any]] = []
 
+        from optim.search_audit import search_with_audit
         for sq in ordered:
             sq_id = sq["id"]
             question = sq["question"]
@@ -416,8 +417,15 @@ class AdaptiveQueryPlanner:
             is_dup = any(sq_lower in eq or eq in sq_lower for eq in existing_set)
 
             new_docs: List[Dict[str, Any]] = []
+            records = []
             if not is_dup:
-                new_docs = self._search_subq(search_query)
+                # The legacy helper swallows failures; audit the provider directly here.
+                if _DDG_AVAILABLE and duckduckgo_search is not None:
+                    try:
+                        new_docs = search_with_audit(records, "duckduckgo", search_query,
+                                                     self.results_per_subq, duckduckgo_search)
+                    except Exception:
+                        new_docs = []
                 all_gap_contexts.extend(new_docs)
                 existing_set.add(sq_lower)
 
@@ -428,14 +436,14 @@ class AdaptiveQueryPlanner:
                 "depends_on": depends_on,
                 "new_docs": len(new_docs),
                 "skipped": is_dup,
-                "retrieved_docs": [
-                    {"title": d.get("title", ""), "url": d.get("url", "")}
-                    for d in new_docs
-                ],
+                "search_unavailable": not is_dup and (not _DDG_AVAILABLE or duckduckgo_search is None),
+                "search_records": records,
+                "retrieved_docs": [d for r in records for d in r["retrieved_docs"]],
             })
 
         plan_summary: Dict[str, Any] = {
             "enabled": True,
+            "reused_pre_search_plan": reused_plan,
             "sub_questions_count": len(sub_questions),
             "execution_order": [sq["id"] for sq in ordered],
             "total_new_docs": len(all_gap_contexts),

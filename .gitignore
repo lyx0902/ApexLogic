@@ -31,4 +31,6 @@ tests/*
 docs/*
 !docs/redis-cache.md
 !docs/memory-first.md
+!docs/retrieval-planning-audit.md
+!docs/memory-publication-diagnostics.md
 migrations/

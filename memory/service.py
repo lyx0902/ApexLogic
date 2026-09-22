@@ -164,7 +164,42 @@ class MemoryService:
                     "valid_until": (observed.astimezone(timezone.utc) + timedelta(days=self.options["ttl_days"])).isoformat()}
         return list(items.values())
 
-    def publish(self, state, checkpoint_id, completed_at):
+    def publish(self, state, checkpoint_id, completed_at, *, trigger="direct"):
+        from memory.publication_log import new_attempt, safe_exception_chain
+        attempt = new_attempt(state['run_id'], checkpoint_id, self.namespace, trigger)
+        log_errors = []
+        def persist():
+            try:
+                self.repo.save_publication_attempt(attempt)
+            except Exception as exc:
+                log_errors.append(type(exc).__name__)
+        # No-op reopening does not create a fictitious new publication attempt.
+        try:
+            receipt = self.repo.publication(state['run_id'], checkpoint_id, self.namespace)
+        except Exception:
+            receipt = None
+        if receipt and receipt['status'] in {'completed', 'skipped'}:
+            return receipt
+        persist()
+        try:
+            receipt = self._publish(state, checkpoint_id, completed_at, attempt, persist)
+            attempt.update(status=receipt['status'], ended_at=now(), failed_item_id=None)
+        except Exception as exc:
+            attempt.update(status='failed', ended_at=now(), errors=safe_exception_chain(exc))
+            persist()  # Persist the original failure before trying to update the receipt.
+            try:
+                self.repo.finish(state['run_id'], checkpoint_id, self.namespace, 'failed', type(exc).__name__)
+                receipt = self.repo.publication(state['run_id'], checkpoint_id, self.namespace)
+            except Exception as finish_exc:
+                attempt['receipt_update_errors'] = safe_exception_chain(finish_exc)
+                receipt = None
+            receipt = receipt or {'status':'failed', 'error':type(exc).__name__, 'item_ids':[]}
+        persist()
+        if log_errors:
+            receipt = dict(receipt, attempt_log_error=log_errors[-1], latest_attempt=attempt)
+        return receipt
+
+    def _publish(self, state, checkpoint_id, completed_at, attempt, persist):
         run_id = state["run_id"]
         stats = state.get("memory_stats", {})
         if stats.get("query_id"):
@@ -176,6 +211,7 @@ class MemoryService:
             self.repo.prepare(run_id, checkpoint_id, self.namespace, self._eligible(state, completed_at))
             receipt = self.repo.publication(run_id, checkpoint_id, self.namespace)
         if not receipt["item_ids"]:
+            attempt.update(total=0, stage="finish_publication")
             review = state.get("review_result", {})
             accepted = state.get("is_satisfactory") or (review.get("answer_status") == "limited" and review.get("quality_accepted") is True)
             if not accepted:
@@ -188,16 +224,31 @@ class MemoryService:
                 reason = "no_eligible_original_evidence"
             self.repo.finish(run_id, checkpoint_id, self.namespace, "skipped", skip_reason=reason)
             return self.repo.publication(run_id, checkpoint_id, self.namespace)
-        try:
-            for item_id in receipt["item_ids"]:
-                if self.repo.has_embedding(item_id, self.identity):
-                    continue
-                item = self.repo.get(item_id, self.namespace)
-                vector = self._vectors([item["claim"] + "\n" + item["content"]])[0]
-                self.repo.put_embedding(item_id, self.identity, vector)
-            self.repo.finish(run_id, checkpoint_id, self.namespace, "completed")
-        except Exception as exc:
-            self.repo.finish(run_id, checkpoint_id, self.namespace, "failed", type(exc).__name__)
+        attempt['total'] = len(receipt['item_ids'])
+        attempt['stage'] = 'check_existing_vectors'
+        pending = []
+        for item_id in receipt['item_ids']:
+            attempt['failed_item_id'] = item_id
+            if self.repo.has_embedding(item_id, self.identity):
+                attempt['completed_before'] += 1
+            else:
+                pending.append(item_id)
+        persist()
+        for item_id in pending:
+            attempt.update(stage='read_evidence', failed_item_id=item_id)
+            persist()
+            item = self.repo.get(item_id, self.namespace)
+            attempt['stage'] = 'embedding_request'
+            persist()
+            vector = self._vectors([item['claim'] + "\n" + item['content']])[0]
+            attempt['stage'] = 'write_vector'
+            persist()
+            self.repo.put_embedding(item_id, self.identity, vector)
+            attempt['completed_this_attempt'] += 1
+            persist()
+        attempt.update(stage='finish_publication', failed_item_id=None)
+        persist()
+        self.repo.finish(run_id, checkpoint_id, self.namespace, 'completed')
         return self.repo.publication(run_id, checkpoint_id, self.namespace)
 
 
