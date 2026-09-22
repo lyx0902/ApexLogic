@@ -8,7 +8,7 @@
 
 **Python · LangGraph · Streamlit · BGE · SQLite / PostgreSQL + pgvector · Redis**
 
-[核心能力](#核心能力) · [工作原理](#工作原理) · [快速开始](#快速开始) · [数据库与缓存部署](#数据库与缓存部署) · [配置](#配置) · [评测与开发](#评测与开发)
+[核心能力](#核心能力) · [工作原理](#工作原理) · [快速开始](#快速开始) · [数据库与缓存部署](#数据库与缓存部署) · [配置](#配置) · [评测与开发](#评测与开发) · [模块文档](#模块文档)
 
 ## 核心能力
 
@@ -347,4 +347,21 @@ ApexLogic/
 └── compose.redis.yml       # Redis 缓存
 ```
 
-进一步阅读：[记忆优先检索](docs/memory-first.md) · [查询规划与逐题资料追踪](docs/retrieval-planning-audit.md) · [Redis 缓存](docs/redis-cache.md) · [记忆发布诊断](docs/memory-publication-diagnostics.md)
+## 模块文档
+
+详细说明统一收录在 [模块文档索引](docs/handbook/index.md)。各篇独立介绍职责、接口、执行流程、故障边界与验收方法，可按需要阅读。
+
+| 模块 | 文档内容 |
+| --- | --- |
+| [架构与模块契约](docs/handbook/architecture.md) | 模块依赖、共享状态与端到端数据流 |
+| [执行与恢复](docs/handbook/execution.md) | 任务生命周期、checkpoint、执行锁与恢复校验 |
+| [检索编排](docs/handbook/retrieval.md) | 两条检索路径、MAB、图扩展、AQD、IRCoT 与逐题审计 |
+| [排序与证据上下文](docs/handbook/ranking.md) | BGE 召回与重排、必要证据保留及 S / R 引用通道 |
+| [写作与评审](docs/handbook/writing-review.md) | 草稿修订、评分收口、回答标签与路由规则 |
+| [来源记忆](docs/handbook/memory.md) | 证据模型、语义召回、去重、版本与冲突处理 |
+| [记忆优先调度](docs/handbook/memory-policy.md) | 覆盖检查、免搜条件、上下文保留预算与模式对照 |
+| [记忆发布与诊断](docs/handbook/publication.md) | 发布资格、向量补齐、回执与失败尝试历史 |
+| [持久化后端](docs/handbook/storage.md) | SQLite / PostgreSQL 数据布局、部署、迁移与只读查询 |
+| [搜索与向量缓存](docs/handbook/cache.md) | Redis 缓存键、TTL、并发合并、故障旁路与统计口径 |
+| [使用与配置](docs/handbook/operations.md) | 启动、配置生效规则、UI / CLI 操作与页面统计解释 |
+| [测试与评测](docs/handbook/evaluation.md) | 模块验收、基础设施集成、恢复测试与复用收益实验 |
