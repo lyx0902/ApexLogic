@@ -1,180 +1,330 @@
-# ApexLogic Deep Research Multi-Agent
+# ApexLogic
 
-基于 **LangGraph** 的深度研究多智能体系统。输入一个研究主题，系统自动调度三个 Agent 协作——**Researcher** 执行广搜与精筛、**Writer** 生成结构化草稿、**Reviewer** 四维量化评审——形成"检索→起草→评审→修订"闭环，直至质量达标或达到轮次上限。
+**可恢复、可复用、可追踪的多智能体深度研究系统。**
 
-相比标准 RAG 流水线，ApexLogic 在检索端叠加了四层优化（MAB 自适应预算 / 概念共现图扩展 / 自适应查询分解 / 交错链式推理补搜），写作端支持基于引用核查的定向修订，评审端输出可追踪的四维评分（事实准确性、逻辑完整性、信息覆盖广度、结论可执行性）。
+输入研究主题，ApexLogic 自动完成问题拆解、多源检索、多跳补搜、报告写作与迭代评审。基于 LangGraph 编排 Researcher、Writer、Reviewer 三个 Agent，将检索证据、执行状态与跨任务记忆连接成完整研究流程。
 
-## 工作流
+**Python · LangGraph · Streamlit · BGE · SQLite / PostgreSQL + pgvector · Redis**
 
+[核心能力](#核心能力) · [工作原理](#工作原理) · [快速开始](#快速开始) · [数据库与缓存部署](#数据库与缓存部署) · [配置](#配置) · [评测与开发](#评测与开发)
+
+## 核心能力
+
+| 能力 | 实现方式 |
+| --- | --- |
+| 多智能体研究闭环 | Researcher 检索、Writer 起草、Reviewer 评审；按反馈补充研究或定向修订 |
+| 自适应检索 | Thompson Sampling 分配搜索结果配额，结合概念图扩展、AQD 子问题分解与 IRCoT 多跳补搜 |
+| 证据筛选与引用 | BGE 向量召回与重排；普通检索来源和推理补搜来源分别保留引用链路 |
+| 任务中断恢复 | LangGraph Checkpointer 持久化节点状态，保存配置快照、执行尝试与耗时，重启后继续任务 |
+| 跨任务来源记忆 | 保存被接受报告引用的可追溯原文片段，通过 SQLite 或 PostgreSQL / pgvector 检索复用 |
+| 记忆优先检索 | 逐子问题检查历史证据覆盖，只对满足复用条件的问题省去预计划搜索，保留缺口补搜 |
+| 搜索与向量缓存 | 可选 Redis 精确缓存，配合 TTL、命名空间隔离、并发请求合并和故障旁路 |
+| 全流程可观测 | Streamlit 展示逐题搜索资料、引用入选、评审路由、缓存统计及记忆发布尝试历史 |
+
+适合需要跨多个来源建立结论、保留研究依据，以及持续复用已有资料的技术调研与多跳问答任务。
+
+## 工作原理
+
+### 研究、写作与评审
+
+```mermaid
+flowchart LR
+    Topic[研究主题] --> Researcher[Researcher<br/>规划与检索]
+    Researcher --> Writer[Writer<br/>起草与修订]
+    Writer --> Reviewer[Reviewer<br/>量化评审]
+    Reviewer -->|证据缺口| Researcher
+    Reviewer -->|写作问题| Writer
+    Reviewer -->|接受或达到轮次上限| Report[输出当前报告]
+    Report -->|满足记忆发布条件| Memory[发布来源记忆]
+    Memory -.->|后续任务召回| Researcher
 ```
-START → Researcher → Writer → Reviewer ─┬─ 评审通过 ──→ END
-                      ↑                  ├─ 信息不足   ──→ Researcher（补充检索）
-                      └──────────────────┴─ 需修订     ──→ Writer（重写草稿）
-```
 
-每轮迭代，Reviewer 给出加权总分（满分 10，默认 7.5 通过）及具体反馈：事实错误、逻辑漏洞、信息缺口。Writer 据此定向修订对应段落，或 Researcher 针对缺口补充检索。超过 `MAX_REVISIONS`（默认 4 轮）仍未通过则强制终止，输出当前最佳版本。
+**Researcher** 负责查询规划、联网检索、记忆召回和资料筛选。**Writer** 将证据组织为报告，并依据反馈修订。**Reviewer** 结合支持与质疑视角、引用检查和结构化修订指令，决定结束、补搜或重写。
+
+评审采用四维加权评分：事实准确性 35%、逻辑完整性 25%、信息覆盖广度 25%、结论可执行性 15%，默认通过阈值为 7.5 / 10。达到轮次上限也会结束任务，因此“执行完成”与“评审通过”是两个不同状态；评分是模型评估结果，不等同于外部事实认证。
+
+### Researcher：按证据覆盖选择检索路径
+
+记忆优先是否生效取决于证据能否覆盖子问题，而不只是数据库是否可连接。
+
+| 路径 | 执行顺序 |
+| --- | --- |
+| 记忆复用生效 | 前置 AQD → 逐题召回与原文覆盖检查 → 未覆盖子问题多源检索 → IRCoT → BGE 筛选与重排 |
+| 未满足复用条件 | 普通查询重写与广搜 → 概念图扩展 → AQD 子问题补搜 → IRCoT → BGE 筛选与重排 |
+
+- **多源广搜**：整合 DuckDuckGo、arXiv、Tavily，使用 MAB（多臂老虎机）的 Thompson Sampling 自适应分配返回结果配额。该配额不是模型 Token 或 API 调用次数预算。
+- **概念图扩展**：从已有资料构建概念共现图，通过 PageRank 选择扩展词，补充初始查询未覆盖的方向。
+- **AQD**：将主题拆成可检索子问题。已有有效的前置计划会直接复用于后置补搜，避免再次调用模型分解；没有有效计划时再执行常规分解。`AQD_RESULTS_PER_SUBQ=3` 表示每题查询最多返回 3 条结果，不是生成 3 个查询变体。
+- **IRCoT**：交替生成研究推理与缺口查询，沿多跳问题继续补搜；记忆复用生效时仍保留这一环节。
+- **BGE**：默认先向量召回 Top-20，再重排至 Top-10。用于省去搜索的记忆证据受保留预算保护，避免跳过搜索后又在筛选中丢失依据。
+
+记忆复用生效时，直接使用未覆盖子问题的查询，不再调用普通查询重写、图扩展和后置 AQD；超出多源广搜查询预算的子问题由 DDG 补搜。没有子问题满足免搜条件时，回到常规路径。
+
+每个子问题都能查看计划查询、实际工具调用、资料链接与摘录、缓存标记，以及是否进入最终写作上下文。相同网址的不同内容分别匹配，同一资料被多个查询找到时保留其来源关系。
+
+### 证据与跨任务记忆
+
+记忆保存的是**可追溯的来源证据**。报告被评审接受后，系统从报告引用中提取能够匹配检索原文的片段，保存来源、摘录、时间、命名空间与向量，并记录发布和访问情况。召回的旧记忆不会被当作全新证据反复发布。
+
+后续任务按子问题召回历史证据，并检查有效期、状态、模型版本与原文覆盖。仅有较高的语义相似度不足以省去搜索；部分覆盖、存在前置事实依赖、时效敏感问题或修订轮仍继续联网。用于免搜的证据还必须进入最终写作上下文，数量和字符数均受预算约束。
+
+普通筛选资料使用 `S` 引用，IRCoT 补搜资料保留独立的 `R` 引用通道。“召回”“入选写作上下文”“被报告引用”分别统计，不能用召回条数代替实际复用效果。
+
+### 状态持久化与 Redis 缓存
+
+| 数据层 | SQLite 模式 | PostgreSQL + Redis 模式 | 职责 |
+| --- | --- | --- | --- |
+| 图执行状态 | `data/checkpoints.sqlite` | `apexlogic_checkpoints` schema | 保存 LangGraph checkpoint，恢复研究节点 |
+| 任务与执行尝试 | `data/runs.sqlite` | `apexlogic` schema | 任务状态、原配置、尝试记录、执行耗时 |
+| 来源记忆 | `data/memory.sqlite`，NumPy 向量检索 | `apexlogic` schema，pgvector 向量检索 | 长期保存证据、向量、关系、访问与发布记录 |
+| 搜索与向量缓存 | 可选 Redis，也可关闭 | Redis | 在有效期内复用相同搜索请求与文本向量 |
+| 页面历史与导出 | `appstats/`、`reports/` | 同左 | 历史展示快照和报告文件，不替代数据库 checkpoint |
+
+SQLite 是默认后端；PostgreSQL 与 Redis 分别按需启用，二者不强制绑定。PostgreSQL 承担持久化存储，Redis 只保存可丢弃缓存。
+
+- **恢复粒度**：已完成节点保留，进程中断后从未完成节点继续；节点内部尚未提交的搜索或模型调用可能重新执行。
+- **配置一致性**：任务保存研究配置与研究时点快照，恢复时沿用原配置；新增策略不会自动套用到旧任务。
+- **重复执行保护**：SQLite 使用文件锁，PostgreSQL 使用 advisory lock，阻止同一任务被多个进程同时执行。
+- **精确缓存**：搜索缓存区分搜索源、查询与参数，向量缓存区分文本及模型配置；相同主题不保证命中，因为实际查询可能不同。
+- **缓存失效与降级**：默认搜索 TTL 为 30 分钟、向量 TTL 为 7 天。时效敏感检索可绕过搜索缓存；Redis 不可用时旁路缓存继续调用原服务。
+
+### 执行观察与记忆发布诊断
+
+Streamlit 按节点更新执行结果，支持查看研究计划、逐题资料、IRCoT 补搜、报告草稿、四维评分与路由决策。完成页提供 Markdown 下载、可点击引用、缓存调用统计和记忆召回 / 入选 / 引用 / 发布情况；历史页面复用相同展示逻辑。
+
+记忆发布独立于报告生成：发布失败不会抹掉已完成报告。重新打开已完成任务时，可补齐尚未生成的记忆向量，无需重新研究。
+
+每次实际发布会写入 `memory_publication_attempts`，记录触发方式、执行阶段、已有与新增向量数量、失败证据 ID，以及经过白名单筛选的异常类型和状态码。重试成功仍保留先前失败记录，页面展示最近 50 次尝试。进程被强制退出时可能留下 `running`，它表示没有记录到结束，不能直接判定为成功或失败。该机制用于定位问题，并不保证外部服务故障自动消失。
 
 ## 快速开始
 
+建议使用 Python 3.11+。默认 SQLite 模式无需安装数据库服务；模型、搜索和 BGE 接口按所启用功能配置。
+
+### 1. 安装依赖
+
+在项目根目录执行：
+
 ```bash
-# 1. 安装依赖
-pip install -r requirements.txt
+python -m venv .venv
+```
 
-# 2. 配置 API Key
-cp .env.example .env
-# 编辑 .env，至少填写 DEEPSEEK_API_KEY、BGE_EMBED_API_KEY、BGE_RERANK_API_KEY
+激活虚拟环境：
 
-# 3. 启动 Web UI（推荐）
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# macOS / Linux
+source .venv/bin/activate
+```
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 2. 配置服务
+
+首次运行时，将 [`.env.example`](.env.example) 复制为 `.env`，已有配置则直接编辑，填写以下服务参数：
+
+| 服务 | 配置 |
+| --- | --- |
+| 研究与写作模型 | `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` |
+| BGE 向量接口 | `BGE_EMBED_API_KEY`、`BGE_EMBED_BASE_URL`、`BGE_EMBED_MODEL` |
+| BGE 重排接口 | `BGE_RERANK_API_KEY`、`BGE_RERANK_BASE_URL`、`BGE_RERANK_MODEL` |
+| Tavily 搜索 | `TAVILY_API_KEY` |
+
+示例使用 BGE-M3 与 BGE-Reranker-v2-M3，可替换为兼容的 embeddings / rerank 服务。DuckDuckGo、arXiv 无需在项目中配置 API Key。
+
+**在复制后的 `.env` 中删除或注释 `HTTP_PROXY=http://`、`HTTPS_PROXY=http://` 占位项**；需要代理时填写实际有效地址。真实密钥只放在本地 `.env`，不提交到仓库。
+
+### 3. 启动研究
+
+```bash
+# Web UI
 streamlit run app.py
 
-# 或命令行运行
-python main.py --topic "你的研究主题" --output-mode debug
+# 命令行
+python main.py --topic "比较关系型数据库与向量数据库在智能体记忆中的适用场景"
 ```
 
-## 状态恢复
+Web UI 可设置研究主题、迭代上限、通过阈值和任务存储后端，也可查看已有任务并继续执行。
 
-CLI 与 Streamlit 支持基于 SQLite checkpoint 的节点级断点恢复。每次研究打印
-`run_id`，程序重启后可执行 `python main.py --resume RUN_ID`；也可在侧边栏的
-“研究任务 · 断点恢复”中继续。原任务的阈值、轮次和检索配置随任务保存。
+## 数据库与缓存部署
 
-`python main.py --status RUN_ID` 查询已保存进度；
-`python export_report.py --run-id RUN_ID --output-mode both` 从已完成任务导出，不再调用模型。
-执行结束和质量通过分别显示。Researcher 内部中断仍需重跑该节点。
+需要集中保存研究状态与记忆时，可启用 PostgreSQL / pgvector；需要复用搜索和向量请求时，可增加 Redis。仓库提供 Docker Compose 配置，应用仍在本地 Python 环境运行。
 
-存储、恢复边界、兼容性与测试说明见 [状态恢复说明](docs/state-recovery.md)。
+### PostgreSQL + pgvector
 
-## 核心特性
-
-**四层检索优化**，逐层作用于同一候选文档池，最后经 BGE 两阶段精筛选出 Top-10 高质量上下文：
-
-- **Thompson Sampling MAB**：根据 DDG / ArXiv / Tavily 三路搜索源的历史表现，动态分配每轮检索预算，优质来源获得更多配额
-- **Graph Expand**：从已检索文档中提取核心概念，构建共现图（PageRank），生成扩展查询方向补搜
-- **AQD（自适应查询分解）**：LLM 将主题拆解为多个子问题，拓扑排序后逐子问题检索，覆盖不同切入角度
-- **IRCoT（交错链式推理补搜）**：LLM 多跳推理链识别信息缺口，针对缺口定向补搜，推理链跨迭代累积
-
-**BGE 两阶段精筛**：Retriever（向量相似度粗筛 top-20）→ Reranker（交叉编码器精排 top-10）
-
-**四维量化评审**：Reviewer 从事实准确性（35%）、逻辑完整性（25%）、信息覆盖广度（25%）、结论可执行性（15%）四个维度打分。S1 < 5 或 S3 < 4 时强制回到 Researcher 补充检索，不依赖总分判定。
-
-## 配置要点
-
-`.env` 中必填的三个 Key：
-
-| 变量 | 用途 |
-|---|---|
-| `DEEPSEEK_API_KEY` | LLM（查询重写/起草/评审/推理） |
-| `BGE_EMBED_API_KEY` | BGE 向量嵌入（粗筛） |
-| `BGE_RERANK_API_KEY` | BGE 重排序（精排） |
-
-常用可选配置：`MAX_REVISIONS`（最大迭代轮数，默认 4）、`REVIEWER_PASS_THRESHOLD`（通过阈值，默认 7.5/10）、`TAVILY_API_KEY`（启用 Tavily 搜索源）。所有优化层（Graph Expand / AQD / IRCoT）均可通过环境变量独立开关或调整参数，详见 `.env.example`。
-
-## 输出模式
-
-`export_report.py` 支持四种输出模式，一条命令切换：
+安装并启动 Docker，在虚拟环境中安装可选依赖：
 
 ```bash
-python export_report.py --topic "你的研究主题" --output-mode user/debug/both/user_only
+python -m pip install -r requirements-postgres.txt
 ```
 
-| 模式 | 产物 |
-|---|---|
-| `user` | 干净的研究报告 + 参考文献 |
-| `debug` | 完整报告 + 四维评分详情 + 迭代历史 + 执行轨迹 + MAB/图扩展/AQD/IRCoT 各层摘要 |
-| `both` | 同时输出 user + debug 两份 Markdown + BGE 检索明细 JSON |
-| `user_only` | 内部运行完整流水线，仅导出用户侧 Markdown |
+在 `.env` 中设置以下内容，密码占位值须替换，DSN 中的密码保持一致。示例使用本机 `5433` 端口，便于与已有的 `5432` 服务共存：
 
-输出文件默认落地项目 `reports/` 目录，持久化任务按 `run_id` 命名，重复导出更新相同文件。
-
-## Streamlit Web UI
-
-`streamlit run app.py` 启动可视化界面，整体信息架构如下：
-
-**侧边栏（参数配置）**
-- 研究主题输入、最大反思轮数滑块、通过阈值滑块
-- "开始深度研究"按钮触发执行
-- 历史记录列表：过往运行结果以 JSON 形式保存在 `appstats/` 目录，可随时回看
-
-**主区域（实时流式执行）**
-- 系统通过 LangGraph 的 `stream()` 模式逐节点推送状态，前端实时渲染而非等待全流程结束
-- 每个节点完成后展示对应面板，三个面板按执行顺序依次展开：
-
-1. **Researcher 面板**：展示本轮检索词、MAB 三路预算分配、去重统计、AQD 子问题分解详情（含每个子问题补搜到的文档链接）、IRCoT 逐跳推理链与 gap 查询。若跨轮次推理，会标注哪些推理链是本轮新增、哪些继承自历史轮次
-2. **Writer 面板**：分离展示 DeepSeek 的 `<think>` 内部思维链与正文草稿，草稿预览前 600 字
-3. **Reviewer 面板**：四维评分仪表盘（每维得分 + 加权总分与阈值的差值）、评审意见文字反馈、结构化修订指令、下一跳路由决策（输出最终报告 / 补充检索 / 修订草稿）
-
-**最终输出区**
-- 完整研究报告（正文中的 `[S1]` `[R1]` 等引用自动转为可点击超链接）
-- 一键下载 Markdown 报告
-- BGE Reranker 精选的 Top-10 参考资料列表
-- IRCoT 推理链专属参考文献（独立于 BGE pipeline，不经过 BGE 筛选，确保推理发现的关键信息不丢失）
-
-**历史记录浏览**
-- 过往运行结果完整回放：最终报告、迭代快照、每轮思维链、四维评分，展示逻辑与直播执行完全一致
-
-## 常用命令
-
-### 研究报告导出
+```dotenv
+APEXLOGIC_POSTGRES_PORT=5433
+APEXLOGIC_POSTGRES_PASSWORD=REPLACE_WITH_YOUR_PASSWORD
+APEXLOGIC_POSTGRES_DSN="host=127.0.0.1 port=5433 dbname=apexlogic user=apexlogic password=REPLACE_WITH_YOUR_PASSWORD"
+```
 
 ```bash
-# 一条命令，--output-mode 切换 user / debug / both / user_only
+docker compose -f compose.postgres.yml up -d --wait
+python -m scripts.postgres_admin init
+python -m scripts.postgres_admin check
+```
+
+初始化完成后，将 `.env` 中的存储后端改为以下值并重启应用：
+
+```dotenv
+APEXLOGIC_STORAGE_BACKEND=postgres
+```
+
+`init` 创建或升级业务表、pgvector 扩展与 checkpoint 表；更新项目后也用此命令应用新增迁移。数据库客户端连接 `127.0.0.1:5433`、数据库 / 用户 `apexlogic`，选择 `apexlogic` 和 `apexlogic_checkpoints` 两个 schema 即可浏览业务与状态表。
+
+切换后端不会自动搬迁旧任务。旧任务仍在原后端恢复；已有 SQLite 记忆可先预览，再显式导入：
+
+```bash
+python -m scripts.postgres_admin import-memory --source data/memory.sqlite
+python -m scripts.postgres_admin import-memory --source data/memory.sqlite --apply
+```
+
+该命令导入来源记忆，不迁移 LangGraph checkpoint 或旧任务执行记录。
+
+### Redis 缓存
+
+```bash
+python -m pip install -r requirements-redis.txt
+```
+
+将以下配置加入 `.env`，替换密码占位值：
+
+```dotenv
+APEXLOGIC_CACHE_ENABLED=1
+APEXLOGIC_REDIS_HOST=127.0.0.1
+APEXLOGIC_REDIS_PORT=6379
+APEXLOGIC_REDIS_DB=0
+APEXLOGIC_REDIS_PASSWORD=REPLACE_WITH_YOUR_REDIS_PASSWORD
+APEXLOGIC_SEARCH_CACHE_TTL=1800
+APEXLOGIC_EMBED_CACHE_TTL=604800
+```
+
+```bash
+# 同时管理 PostgreSQL 与 Redis
+docker compose -f compose.postgres.yml -f compose.redis.yml up -d --wait
+
+# 检查 Redis 连接和一次缓存写入 / 命中，测试后清理测试键
+python -m scripts.redis_admin
+```
+
+如果使用 SQLite，只需 `docker compose -f compose.redis.yml up -d --wait`。重启应用后，新执行的节点即可使用缓存。
+
+Compose 中的 Redis 绑定本机地址，启用密码认证、256 MB 内存上限与 `allkeys-lru` 淘汰，不启用磁盘持久化。缓存丢失不会删除研究状态或来源记忆。
+
+## 配置
+
+下表列出常用配置。示例文件与未配置时的回退值不一致之处单独标注，其余为当前研究流程的默认值。
+
+| 配置 | 默认或示例 | 作用 |
+| --- | --- | --- |
+| `MAX_REVISIONS` | `.env.example` 为 `4`；未配置回退 `3` | 评审迭代上限 |
+| `REVIEWER_PASS_THRESHOLD` | `7.5` | 评审通过阈值 |
+| `REVIEWER_ALLOW_DEGRADED_PASS` | `0` | 默认不因降级评审而自动放行 |
+| `SEARCH_QUERY_BUDGET` | `3` | 广搜使用的查询条数预算 |
+| `GRAPH_EXPAND_QUERIES` | `.env.example` 为 `4`；未配置回退 `2` | 图扩展查询数量 |
+| `AQD_ENABLED` / `AQD_MAX_SUB_QUESTIONS` | `1` / `4` | 子问题分解开关与数量上限 |
+| `AQD_RESULTS_PER_SUBQ` | `3` | 常规 AQD 每题补搜结果上限 |
+| `ITERATIVE_RETRIEVAL_ENABLED` / `MAX_HOPS` | `1` / `4` | IRCoT 开关与推理跳数上限 |
+| `BGE_RETRIEVER_TOP_K` / `BGE_RERANKER_TOP_K` | `20` / `10` | 向量召回与重排候选数 |
+| `MEMORY_ENABLED` | `1` | 新任务启用来源记忆 |
+| `MEMORY_FIRST_MODE` | `reuse` | 新任务记忆优先策略：`off`、`observe`、`reuse` |
+| `MEMORY_NAMESPACE` | `workspace/default` | 记忆与缓存的逻辑命名空间 |
+| `MEMORY_TOP_K` / `MEMORY_MIN_SCORE` | `5` / `0.65` | 记忆召回条数与相似度阈值 |
+| `MEMORY_TTL_DAYS` / `MEMORY_CHAR_BUDGET` | `30` / `3000` | 记忆有效期与摘录字符预算 |
+| `APEXLOGIC_STORAGE_BACKEND` | `sqlite` | 持久化后端：`sqlite` / `postgres` |
+| `APEXLOGIC_CACHE_ENABLED` | `0` | 可选 Redis 缓存开关 |
+| `APEXLOGIC_CACHE_FORCE_REFRESH` | `0` | 设为 `1` 绕过搜索缓存和记忆优先减搜 |
+
+`MEMORY_FIRST_MODE` 和 Redis 配置可手动加入 `.env`。`observe` 执行记忆覆盖评估但不减少预计划搜索，适合与 `reuse` 对照；`off` 关闭记忆优先调度，不等同于关闭整个记忆模块。旧任务缺少该策略快照时按 `off` 处理。
+
+时效判断使用关键词规则；存在隐含时效要求时可强制刷新。强制刷新针对搜索与记忆减搜，文本向量仍可复用缓存。
+
+## 任务管理与报告导出
+
+```bash
+python main.py --list-runs
+python main.py --status RUN_ID
+python main.py --resume RUN_ID
+
+# 显式选择原任务后端
+python main.py --resume RUN_ID --storage-backend sqlite
+
+# 从已完成任务导出，不重新调用模型
+python export_report.py --run-id RUN_ID --output-mode both
+
+# 新建研究并导出，会调用搜索和模型服务
 python export_report.py --topic "多智能体系统中的反思机制" --output-mode both
 ```
 
-### 批量评测（HotpotQA / Bamboogle）
+将 `RUN_ID` 替换为实际任务 ID。`main.py` 支持 `user` / `debug` 输出；`export_report.py` 支持 `user` / `debug` / `both` / `user_only`，用于生成阅读报告或包含执行过程的调试材料。
 
-评测 ApexLogic 自身流水线在多跳问答数据集上的表现，支持并发与 LLM 语义判定：
+断点恢复可通过运行中终止 Streamlit 进程后重启验证：使用同一后端打开原任务，检查已完成节点是否保留、未完成节点是否继续，以及执行尝试是否新增。累计耗时只包含已记录的部分，强制退出前尚未保存的时长不计入。
+
+## 评测与开发
+
+### 多跳问答评测
+
+支持 HotpotQA、Bamboogle，以及 Exact Match / LLM 语义判定：
 
 ```bash
-# HotpotQA hard 难度，限制 50 题，LLM 语义判定，4 线程并发
 python eval_runner.py --dataset hotpotqa --difficulty hard --limit 50 --scorer llm --concurrency 4
-
-# Bamboogle 全量，Exact Match 模式
-python eval_runner.py --dataset bamboogle --scorer em
+python eval_runner.py --dataset bamboogle --limit 10 --scorer em
 ```
 
-结果 JSON 默认输出到 `tests/` 目录，文件命名含数据集、难度、时间戳。评测脚本与 `main.py`/`export_report.py` 完全独立，不依赖 Streamlit。
-
-### 商业模型基线评测
-
-绕过 ApexLogic 流水线，直接调商业模型 API 作答，用于横向对比：
+也可直接调用商业模型作为基线：
 
 ```bash
-# Qwen / Doubao 基线，HotpotQA hard 难度
 python eval_baselines.py --provider qwen --dataset hotpotqa --level hard --limit 50 --scorer llm
 python eval_baselines.py --provider doubao --dataset hotpotqa --level hard --limit 50 --scorer llm
 ```
 
-需要预先在 `.env` 中配置 `QWEN_API_KEY` 或 `DOUBAO_API_KEY` + `DOUBAO_ENDPOINT_ID`。
+基线分别需要 `QWEN_API_KEY` 或 `DOUBAO_API_KEY` + `DOUBAO_ENDPOINT_ID`。评测脚本独立于 Streamlit，结果默认写入 `tests/`。评测并发参数用于批量任务，不表示单个 Researcher 已实现分布式并行检索。
 
-### 评测耗时统计
+### 回归测试与效果验证
 
 ```bash
-python -u evals/elapsed_stats.py --input tests/results_hotpotqa_20260411_172430.json
+python -m pytest -q
 ```
 
-输出 `total_rows`、`valid_rows`、`unique_ids`、`overall_avg` 等统计。
+测试覆盖缓存、记忆优先决策、查询规划复用、逐题资料追踪等行为；真实 PostgreSQL / Redis 集成测试按各测试文件的说明显式启用，使用隔离测试资源。
 
-## 容错策略
+验证记忆与缓存收益时，建议对同类新任务比较 `off`、`observe`、`reuse`，同时记录报告质量、实际外部调用数、缓存命中、记忆入选 / 引用和总耗时。记忆覆盖判断本身会增加模型调用，单次命中或一对重复任务不足以证明稳定提速。
 
-系统遵循"降级不中断"原则——LLM 不可用时回退规则生成，BGE 服务异常时跳过不截断候选集，Reviewer 输出非法 JSON 时规则评审器接管，任意优化层异常只记录错误日志不中断主流程。
+### 项目结构
 
-## 安全提示
+```text
+ApexLogic/
+├── agents/                 # Researcher、Writer、Reviewer 与证据处理
+├── core/                   # LangGraph、任务执行、持久化、配置、缓存
+├── memory/                 # 来源记忆、逐题覆盖、发布与诊断
+├── optim/                  # MAB、图扩展、AQD、IRCoT、检索追踪
+├── bge/                    # 向量接口、召回与重排
+├── tools/                  # Web 与 arXiv 搜索工具
+├── prompts/                # Agent 提示词
+├── scripts/                # PostgreSQL 初始化、迁移与 Redis 检查
+├── evals/                  # 数据集、评分和结果分析
+├── tests/                  # 回归与集成测试
+├── docs/                   # 模块设计与验收说明
+├── app.py                  # Streamlit Web UI
+├── main.py                 # 持久化研究 CLI
+├── export_report.py        # 报告导出
+├── eval_runner.py          # ApexLogic 批量评测
+├── eval_baselines.py       # 商业模型基线
+├── compose.postgres.yml    # PostgreSQL + pgvector
+└── compose.redis.yml       # Redis 缓存
+```
 
-- 不要把真实 API Key 提交到仓库，`.env` 已在 `.gitignore` 中
-- `.env.example` 只放占位值
-
-
-## 跨任务语义记忆
-
-新建持久化任务默认启用来源记忆（`MEMORY_ENABLED=1`），独立保存在 `data/memory.sqlite`。
-评审接受后，记忆模块仅发布在报告中引用且能追溯到检索原文的稳定片段；记忆筛选不影响报告通过。
-下一任务用 BGE + NumPy 召回，仍保留在线检索；时效问题优先使用在线来源。
-旧 checkpoint 不会自动开启记忆，也不自动导入历史报告。
-Web 展示召回、入选、引用和发布状态，发布失败可重新打开已完成任务重试。
-
-配置、验收和限制见 [语义记忆使用说明](docs/semantic-memory.md)。
-
-## PostgreSQL / pgvector（可选后端）
-
-默认继续使用 SQLite。PostgreSQL 安装、初始化、旧记忆导入和验收说明见 [迁移指南](docs/postgres-migration.md)。
-Streamlit 左侧可切换任务存储；CLI 使用 `--storage-backend sqlite|postgres`。旧任务继续在原后端恢复。
+进一步阅读：[记忆优先检索](docs/memory-first.md) · [查询规划与逐题资料追踪](docs/retrieval-planning-audit.md) · [Redis 缓存](docs/redis-cache.md) · [记忆发布诊断](docs/memory-publication-diagnostics.md)
