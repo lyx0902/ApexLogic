@@ -46,7 +46,7 @@ def _inject_citation_hyperlinks(
             return f"[[{cid}]]({url})"
         return m.group(0)
 
-    return re.sub(r'\[([SR]\d+)\]', replace_match, text)
+    return re.sub(r'\[([SRU]\d+)\]', replace_match, text)
 
 
 def parse_args() -> argparse.Namespace:

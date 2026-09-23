@@ -11,6 +11,9 @@ from uuid import uuid4
 from core.persistence import RunBusyError, validate_run_id
 from core.postgres import connect
 from core.runner import ResearchRunner
+from core.conversation import ConversationRepository
+from core.followup import answer_followup
+from core.report_operations import execute_report_operation
 from core.service_limits import capacity, global_slot, reserve_queue_room
 
 
@@ -107,6 +110,7 @@ class BackgroundWorker:
     def __init__(self, *, runner=None, client=None, worker_id=None, lease_seconds=30):
         self.runner = runner or ResearchRunner(backend="postgres")
         self.scheduler = BackgroundScheduler(self.runner)
+        self.conversation = ConversationRepository(self.runner)
         self.client = client or queue_client()
         self.worker_id = worker_id or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:8]}"
         self.lease_seconds = lease_seconds
@@ -235,6 +239,7 @@ class BackgroundWorker:
 
     def _sweep(self):
         # PostgreSQL reconciliation also covers missing Redis messages or a flushed stream.
+        self.process_followup_once()
         with connect() as db:
             cancelled = db.execute("""SELECT run_id FROM research_jobs WHERE status='running'
                 AND cancel_requested=true AND lease_until<now() LIMIT 20""").fetchall()
@@ -256,6 +261,57 @@ class BackgroundWorker:
                 pass
         for row in rows:
             self.process(row["run_id"])
+            # A large recovery backlog must not defer all follow-up turns.
+            self.process_followup_once()
+
+    def process_followup_once(self):
+        """PostgreSQL polling is the durable dispatch path for short follow-up turns."""
+        with global_slot("followup", capacity("APEXLOGIC_GLOBAL_FOLLOWUP_MAX_INFLIGHT", 2)) as admitted:
+            if not admitted:
+                return False
+            turn = self.conversation.claim(self.worker_id, lease_seconds=self.lease_seconds)
+            if turn is None:
+                return False
+            stop = threading.Event()
+            lost_lease = threading.Event()
+
+            def heartbeat():
+                while not stop.wait(max(1, self.lease_seconds // 3)):
+                    try:
+                        if not self.conversation.heartbeat(turn["turn_id"], self.worker_id,
+                                                           lease_seconds=self.lease_seconds):
+                            lost_lease.set()
+                            return
+                    except Exception as exc:
+                        logger.warning("Follow-up heartbeat failed for %s: %s",
+                                       turn["turn_id"], type(exc).__name__)
+
+            thread = threading.Thread(target=heartbeat, daemon=True)
+            thread.start()
+            try:
+                kind = (turn.get("request_json") or {}).get("intent", "follow_up")
+                if kind == "follow_up":
+                    prior = self.conversation.list(turn["run_id"])
+                    answer, citations, checkpoint_id = answer_followup(
+                        self.runner, turn, prior_turns=prior)
+                    result, report_version = {}, None
+                else:
+                    versions = self.conversation.list_versions(turn["run_id"])
+                    answer, citations, checkpoint_id, result, report_version = (
+                        execute_report_operation(self.runner, turn, prior_versions=versions))
+                if not lost_lease.is_set():
+                    self.conversation.complete(turn["turn_id"], self.worker_id,
+                                               answer=answer, citation_ids=citations,
+                                               checkpoint_id=checkpoint_id,
+                                               result=result, report_version=report_version)
+            except Exception as exc:
+                self.conversation.fail(turn["turn_id"], self.worker_id, type(exc).__name__)
+                logger.warning("Follow-up attempt failed for %s: %s",
+                               turn["turn_id"], type(exc).__name__)
+            finally:
+                stop.set()
+                thread.join(timeout=2)
+            return True
 
     def run_forever(self):
         while True:

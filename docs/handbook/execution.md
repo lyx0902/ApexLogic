@@ -74,6 +74,8 @@ Worker 通过 `ResearchRunner.stream` 执行，保留原配置快照与 checkpoi
 
 启动及验证步骤见[使用与配置](operations.md)。
 
+Worker 还会扫描 PostgreSQL 中的报告追问记录。追问有独立租约与并发名额，读取已完成任务的 checkpoint，但不改变原研究的调度状态、节点进度和报告。其排队、接管与失败规则见[操作识别与报告追问](intent-and-followup.md)。
+
 ## 验证
 
 ```bash

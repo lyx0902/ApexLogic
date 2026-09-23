@@ -156,6 +156,7 @@ class ResearchRunner:
         return {"record": record, "state": self._memory_result(record, snapshot) if snapshot else {},
                 "next": list(snapshot.next) if snapshot else [],
                 "saved_at": snapshot.created_at if snapshot else None,
+                "checkpoint_id": snapshot.config.get("configurable", {}).get("checkpoint_id") if snapshot else None,
                 "attempts": self.repository.attempts(run_id)}
 
     def stream(self, run_id):

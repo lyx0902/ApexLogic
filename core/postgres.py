@@ -165,5 +165,21 @@ def initialize():
             if rates_version is None:
                 conn.execute(rates_sql)
                 conn.execute("INSERT INTO schema_migrations VALUES (4,%s)", (rates_checksum,))
+            conversation_sql = (Path(__file__).parent.parent / "migrations/postgres/005_conversation.sql").read_text(encoding="utf-8")
+            conversation_checksum = hashlib.sha256(conversation_sql.encode()).hexdigest()
+            conversation_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=5").fetchone()
+            if conversation_version and conversation_version["checksum"] != conversation_checksum:
+                raise RuntimeError("Conversation migration checksum differs")
+            if conversation_version is None:
+                conn.execute(conversation_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (5,%s)", (conversation_checksum,))
+            operations_sql = (Path(__file__).parent.parent / "migrations/postgres/006_report_operations.sql").read_text(encoding="utf-8")
+            operations_checksum = hashlib.sha256(operations_sql.encode()).hexdigest()
+            operations_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=6").fetchone()
+            if operations_version and operations_version["checksum"] != operations_checksum:
+                raise RuntimeError("Report operations migration checksum differs")
+            if operations_version is None:
+                conn.execute(operations_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (6,%s)", (operations_checksum,))
         conn.execute("SET search_path TO apexlogic_checkpoints,public")
         PostgresSaver(conn).setup()

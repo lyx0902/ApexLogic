@@ -19,6 +19,7 @@
 | memory_publications、memory_publication_attempts | data/memory.sqlite | apexlogic |
 | schema_migrations、memory_imports | 不使用同名迁移机制 | apexlogic |
 | research_jobs、research_outbox | 未实现后台队列 | apexlogic |
+| conversation_turns | 未实现后台追问 | apexlogic |
 
 APEXLOGIC_DATA_DIR 或 CLI --data-dir 可改变 SQLite 目录。PostgreSQL 记忆不依赖本地 SQLite 目录。页面历史在 appstats，导出在 reports，二者不属于 Checkpointer。
 
@@ -52,6 +53,8 @@ init 使用迁移锁和 checksum：
 - 版本 1 读取 migrations/postgres/001_initial.sql。
 - 版本 2 使用 memory/publication_log.py 中的 SCHEMA 新增发布尝试日志。
 - 版本 3 读取 migrations/postgres/003_background.sql，新增调度与 outbox 表。
+- 版本 4 读取 migrations/postgres/004_provider_rates.sql，新增来源分钟配额记录。
+- 版本 5 读取 migrations/postgres/005_conversation.sql，新增报告追问记录与租约字段。
 - 最后调用 PostgresSaver.setup 初始化 checkpoint 结构。
 
 已应用迁移校验和不同会报错，不能通过编辑旧 SQL 让现有数据库悄悄接受新结构。部署文件必须包含版本 1 SQL；当前仓库忽略规则涉及 migrations，打包时应检查该文件是否实际包含。

@@ -14,6 +14,7 @@ import os
 import re
 import traceback
 from datetime import datetime
+from uuid import uuid4
 
 import streamlit as st
 
@@ -21,6 +22,8 @@ from export_report import _inject_citation_hyperlinks
 from core.history import (load_history_list, load_or_rebuild_run,
                           merge_completed_runs, save_run_to_history, snapshot_for_event)
 from core.runner import ResearchRunner
+from core.intent import classify_operation
+from core.conversation import ConversationRepository
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -237,6 +240,129 @@ def render_aqd_subquestion(sub):
                 st.caption(selection + (" · 搜索缓存命中" if doc.get('cache_hit') else ""))
             if doc.get("excerpt"):
                 st.text(doc["excerpt"])
+
+
+def render_research_operations(runner: ResearchRunner, run_id: str,
+                               max_revisions: int, pass_threshold: float) -> None:
+    """Show durable report operations and versioned results for one PG run."""
+    from core.background import BackgroundScheduler
+    from core.service_limits import QueueFullError
+
+    st.markdown("---")
+    st.subheader("💬 报告追问与研究操作")
+    st.caption("追问和改写使用已保存报告；更新与核验会检索新来源。新报告版本单独保存，原报告不变。")
+    try:
+        repo = ConversationRepository(runner)
+    except Exception as exc:
+        st.warning(f"研究操作暂不可用（{type(exc).__name__}）；请检查 PostgreSQL 版本 6 迁移和连接。")
+        return
+    key = f"research_operation_{run_id}"
+    token_key = f"research_operation_token_{run_id}"
+    if token_key not in st.session_state:
+        st.session_state[token_key] = uuid4().hex
+    command = st.text_area("输入追问或操作", key=key,
+                           placeholder="例如：报告中 HNSW 与 IVF 的主要差异是什么？")
+    mode = st.selectbox("操作类型", ["自动识别", "追问", "更新", "改写", "核验"],
+                        key=f"research_operation_mode_{run_id}")
+    if st.button("提交研究操作", key=f"submit_operation_{run_id}"):
+        if mode == "自动识别":
+            decision = classify_operation(command, selected_run_id=run_id)
+        else:
+            from core.intent import Operation
+            decision = (Operation("clarify", clarification="请先输入操作内容。")
+                        if not command.strip() else
+                        Operation({"追问": "follow_up", "更新": "update", "改写": "rewrite",
+                                   "核验": "verify"}[mode], target_run_id=run_id))
+        if decision.intent == "clarify":
+            st.info(decision.clarification)
+        else:
+            try:
+                if decision.intent in {"follow_up", "update", "rewrite", "verify"}:
+                    repo.submit(decision.target_run_id, command,
+                                idempotency_key=st.session_state[token_key],
+                                request={"intent": decision.intent,
+                                         "time_scope": decision.time_scope,
+                                         "constraints": decision.constraints,
+                                         "output_format": decision.output_format})
+                    st.session_state[token_key] = uuid4().hex
+                    if decision.target_run_id != run_id:
+                        st.session_state.active_run_id = decision.target_run_id
+                        st.session_state.view_history = False
+                    st.rerun()
+                elif decision.intent == "new_research":
+                    record = BackgroundScheduler(runner).submit(
+                        decision.topic, max_revisions=max_revisions,
+                        pass_threshold=pass_threshold, output_mode="user")
+                    st.session_state.active_run_id = record["run_id"]
+                    st.session_state.view_history = False
+                    st.rerun()
+                else:
+                    target = decision.target_run_id
+                    runner._record(target)
+                    if decision.intent == "cancel":
+                        BackgroundScheduler(runner).cancel(target)
+                    elif decision.intent == "resume":
+                        BackgroundScheduler(runner).enqueue(target)
+                    st.session_state.active_run_id = target
+                    st.session_state.view_history = False
+                    st.rerun()
+            except QueueFullError as exc:
+                st.warning(str(exc))
+            except ValueError as exc:
+                st.warning(str(exc))
+            except Exception as exc:
+                st.error(f"操作未提交（{type(exc).__name__}）。请检查任务状态与后台配置。")
+
+    try:
+        turns = repo.list(run_id)
+    except Exception as exc:
+        st.warning(f"暂时无法读取操作记录（{type(exc).__name__}）。")
+        return
+    try:
+        versions = repo.list_versions(run_id)
+    except Exception as exc:
+        st.warning(f"暂时无法读取报告版本（{type(exc).__name__}）。")
+        versions = []
+    version_by_turn = {item["operation_turn_id"]: item for item in versions}
+    source_state = {}
+    if any(turn["status"] == "completed" for turn in turns):
+        try:
+            source_state = runner.peek(run_id)["state"]
+        except Exception as exc:
+            st.warning(f"暂时无法读取追问引用链接（{type(exc).__name__}），回答正文仍可查看。")
+    for turn in turns:
+        kind = (turn.get("request_json") or {}).get("intent", "follow_up")
+        label = {"follow_up": "追问", "update": "更新", "rewrite": "改写", "verify": "核验"}.get(kind, "操作")
+        st.markdown(f"**{label}：** {turn['question']}")
+        if turn["status"] == "completed":
+            fresh = (turn.get("result_json") or {}).get("fresh_sources") or []
+            if kind in {"update", "verify"} and fresh:
+                counts = {source: sum(str(item.get("source") or "").lower() == source
+                                      for item in fresh) for source in ("duckduckgo", "tavily")}
+                st.caption(f"本次新来源：DuckDuckGo {counts['duckduckgo']} 条 · Tavily {counts['tavily']} 条")
+                if not all(counts.values()):
+                    st.info("本次只有一个检索服务返回可保存来源，跨服务对照不足。")
+            st.markdown(_inject_citation_hyperlinks(turn.get("answer") or "",
+                source_state.get("retrieved_context", []),
+                list(source_state.get("reasoning_contexts", [])) + fresh))
+            version = version_by_turn.get(turn["turn_id"])
+            if version:
+                with st.expander("查看此报告版本", expanded=False):
+                    st.caption(f"版本 {version['version_id'][:8]} · 原报告 checkpoint {version['source_checkpoint_id']}")
+                    st.markdown(_inject_citation_hyperlinks(version["report_markdown"],
+                        source_state.get("retrieved_context", []),
+                        list(source_state.get("reasoning_contexts", [])) +
+                        list(version.get("source_manifest") or [])))
+                    st.download_button("下载此版本 Markdown", version["report_markdown"],
+                                       file_name=f"apexlogic-{run_id[:8]}-{version['version_id'][:8]}.md",
+                                       key=f"download_version_{version['version_id']}")
+        elif turn["status"] == "failed":
+            st.warning(f"{label}处理失败；原研究报告未受影响。")
+        else:
+            st.caption(f"{label}状态：" + ("等待 Worker" if turn["status"] == "queued" else "正在处理"))
+    if turns and any(turn["status"] in {"queued", "running"} for turn in turns):
+        if st.button("刷新操作状态", key=f"refresh_followup_{run_id}"):
+            st.rerun()
 
 
 def show_history_view(data: dict) -> None:
@@ -765,6 +891,7 @@ if inspect_run_id and not start_btn and not resume_run_id:
                 st.warning(f"历史详情暂时无法重建（{type(exc).__name__}），以下展示已保存报告。")
             else:
                 show_history_view(historical_view)
+                render_research_operations(runner, inspect_run_id, max_revisions, pass_threshold)
                 st.stop()
         render_publication_attempts(saved)
         if saved.get("draft"):
@@ -774,6 +901,8 @@ if inspect_run_id and not start_btn and not resume_run_id:
             if item["status"] == "completed":
                 st.download_button("下载 Markdown 报告", report_text,
                                    file_name=f"apexlogic_{inspect_run_id}.md", mime="text/markdown")
+        if selected_storage == "postgres" and item["status"] == "completed":
+            render_research_operations(runner, inspect_run_id, max_revisions, pass_threshold)
         with st.expander("执行尝试与已保存轨迹"):
             st.json({"attempts": info["attempts"], "trace": saved.get("execution_trace", [])})
     except Exception as exc:
@@ -783,6 +912,11 @@ if inspect_run_id and not start_btn and not resume_run_id:
 if st.session_state.view_history and not start_btn and not resume_run_id:
     if st.session_state.history_data:
         show_history_view(st.session_state.history_data)
+        history_run_id = st.session_state.history_data.get("run_id")
+        if (selected_storage == "postgres" and history_run_id and
+                any(item["run_id"] == history_run_id and item["status"] == "completed"
+                    for item in run_list)):
+            render_research_operations(runner, history_run_id, max_revisions, pass_threshold)
     else:
         st.warning("历史记录数据丢失，请重新选择。")
     st.stop()
