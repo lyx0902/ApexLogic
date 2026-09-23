@@ -38,16 +38,6 @@ docs/*
 !docs/memory-first.md
 !docs/retrieval-planning-audit.md
 !docs/memory-publication-diagnostics.md
-migrations/
-!migrations/
-migrations/*
-!migrations/postgres/
-migrations/postgres/*
-!migrations/postgres/001_initial.sql
-!migrations/postgres/003_background.sql
-!migrations/postgres/004_provider_rates.sql
-!migrations/postgres/005_conversation.sql
-!migrations/postgres/006_report_operations.sql
 !docs/handbook/
 docs/handbook/*
 !docs/handbook/intent-and-followup.md
