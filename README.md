@@ -375,5 +375,6 @@ ApexLogic/
 | [记忆发布与诊断](docs/handbook/publication.md) | 发布资格、向量补齐、回执与失败尝试历史 |
 | [持久化后端](docs/handbook/storage.md) | SQLite / PostgreSQL 数据布局、部署、迁移与只读查询 |
 | [搜索与向量缓存](docs/handbook/cache.md) | Redis 缓存键、TTL、并发合并、故障旁路与统计口径 |
+| [意图识别与报告操作](docs/handbook/intent-and-followup.md) | 操作分类、后台追问、增量更新、改写、核验及报告版本 |
 | [使用与配置](docs/handbook/operations.md) | 启动、配置生效规则、UI / CLI 操作与页面统计解释 |
 | [测试与评测](docs/handbook/evaluation.md) | 模块验收、基础设施集成、恢复测试与复用收益实验 |

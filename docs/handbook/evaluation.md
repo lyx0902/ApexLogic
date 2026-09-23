@@ -34,12 +34,12 @@ tests/conftest.py 默认隔离生产存储和缓存配置。真实服务测试�
 | 评审与移除硬门槛 | test_reviewer_logic.py、test_review_without_gate.py、test_premise_review.py |
 | 缓存 | test_cache.py |
 | 真实数据库 | test_postgres_integration.py |
-| 操作识别与报告追问 | test_intent.py、test_conversation.py |
+| 意图识别与报告操作 | test_intent.py、test_conversation.py、test_report_operations.py |
 | 真实 Redis | test_redis_integration.py |
 
 文件均位于 tests 目录。这里不固定测试条数，避免新增测试后文档宣称过时的通过数量。
 
-`test_conversation.py` 默认运行离线追问证据测试。设置 `APEXLOGIC_TEST_CONVERSATION_PG=1` 后，它会用 `.env` 的 PostgreSQL 账号创建独立临时数据库，测试追问迁移、幂等提交、跨 Worker 领取、租约接管和完成隔离，结束后删除临时库。此测试不调用真实模型或搜索 API。
+`test_conversation.py` 默认运行离线追问证据和历史页提交测试。设置 `APEXLOGIC_TEST_CONVERSATION_PG=1` 后，它会用 `.env` 的 PostgreSQL 账号创建独立临时数据库，测试操作迁移、幂等提交、跨 Worker 领取、租约接管、完成隔离与报告版本写入，结束后删除临时库。`test_report_operations.py` 模拟两路各取 3 条、单路失败、更新/改写/核验和引用检查；这些测试不调用真实模型或搜索 API。
 
 广搜并发测试在 `test_retrieval_cleanup.py` 使用模拟延迟，核对来源并发上限、冻结配置传递、缓存计数、异常审计以及串行/并发结果顺序一致。它不证明真实 provider 有稳定提速；真实验证须在相同配额、主题、缓存状态和服务条件下分别运行总线程数 1 与默认并发，并记录实际外部调用数、错误和报告质量。
 

@@ -29,10 +29,13 @@ flowchart TD
     Publication --> Memory
 
     UI --> Intent["研究操作识别"]
-    Intent --> Turns["PostgreSQL 追问记录"]
+    Intent --> Turns["PostgreSQL 报告操作记录"]
     Turns --> Worker
     Worker --> Followup["报告追问：读取完成的 checkpoint"]
     Followup --> Storage
+    Worker --> ReportOps["更新 / 改写 / 核验"]
+    ReportOps --> Tools
+    ReportOps --> Storage
     Memory --> Storage
 ```
 
@@ -69,7 +72,7 @@ memory_publication 和发布尝试历史由 Runner 在图外查询或发布后�
 - 多 Agent 是职责分工与图路由，不代表当前单任务检索已实现异步 DAG 或分布式调度。
 - “任务完成”“评审接受”“记忆发布完成”“报告导出成功”是不同结果。
 - checkpoint 是恢复依据，appstats JSON 是可重建的展示快照；缓存 Redis 与独立队列 Redis 也不能替代 PostgreSQL 状态。
-- 报告追问有独立的 PostgreSQL 记录和 Worker 租约，只读取原任务 checkpoint，不作为 Researcher / Writer / Reviewer 的新节点。
+- 报告操作有独立的 PostgreSQL 记录和 Worker 租约，不作为 Researcher / Writer / Reviewer 的新节点。追问和改写读取已有报告与 S/R 来源；更新和核验另取 U 来源。改写与更新写入独立报告版本，不覆盖原 checkpoint；具体路径见[意图识别与报告操作](intent-and-followup.md)。
 - memory namespace 是逻辑隔离字段，不能据此宣称已实现用户认证或多租户授权。
 - 恢复后允许重跑未提交节点，不承诺外部 API 调用恰好一次。
 

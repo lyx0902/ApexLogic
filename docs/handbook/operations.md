@@ -42,7 +42,7 @@ SQLite 为默认持久化后端，无需 Docker；数据写在项目 data 目录
 | 广搜并发 | APEXLOGIC_BROAD_MAX_WORKERS、APEXLOGIC_BROAD_*_MAX_INFLIGHT | [检索编排](retrieval.md) |
 | AQD、IRCoT 与图扩展并发 | APEXLOGIC_AQD_MAX_WORKERS、APEXLOGIC_IRCOT_MAX_WORKERS、APEXLOGIC_GRAPH_MAX_WORKERS | [检索编排](retrieval.md) |
 | 后台容量 | APEXLOGIC_GLOBAL_*_MAX_INFLIGHT、APEXLOGIC_GLOBAL_*_PER_MINUTE、APEXLOGIC_QUEUE_MAX_PENDING、APEXLOGIC_PROVIDER_WAIT_SECONDS | [执行与恢复](execution.md) |
-| 报告追问 | APEXLOGIC_FOLLOWUP_MAX_PENDING、APEXLOGIC_GLOBAL_FOLLOWUP_MAX_INFLIGHT | [操作识别与报告追问](intent-and-followup.md) |
+| 报告追问与操作 | APEXLOGIC_FOLLOWUP_MAX_PENDING、APEXLOGIC_GLOBAL_FOLLOWUP_MAX_INFLIGHT、TAVILY_API_KEY | [意图识别与报告操作](intent-and-followup.md) |
 | 排序 | BGE_RETRIEVER_*、BGE_RERANKER_*、BGE_EMBED_*、BGE_RERANK_* | [排序](ranking.md) |
 | 记忆内容 | MEMORY_ENABLED、MEMORY_TOP_K、MEMORY_MIN_SCORE、MEMORY_TTL_DAYS、MEMORY_CHAR_BUDGET | [来源记忆](memory.md) |
 | 免搜策略 | MEMORY_FIRST_MODE | [记忆优先调度](memory-policy.md) |
@@ -55,7 +55,7 @@ MEMORY_FIRST_MODE 和 Redis 参数需按需加入 .env；不要假设示例文�
 
 ## 后台 Worker（PostgreSQL）
 
-先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用后台调度版本 3、来源速率版本 4 与追问版本 5 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
+先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用后台调度版本 3、来源速率版本 4、追问版本 5 与报告操作版本 6 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-redis.txt
@@ -68,7 +68,7 @@ docker compose -f compose.postgres.yml -f compose.queue.yml up -d --wait
 
 Worker 完成后会写入 `appstats/run_<run_id>.json`。历史记录按完成时间排序；如果文件缺失或损坏，PostgreSQL 已完成任务仍会列在历史列表，打开时用已保存的 checkpoint 补建并显示相同的历史详情，不重跑研究。`APEXLOGIC_HISTORY_DIR` 若设置，相对路径按项目根目录解析，UI 和 Worker 使用同一个目录。
 
-PostgreSQL 已完成任务的详情和历史页还有“报告追问与研究操作”。输入追问后，页面只写入 PostgreSQL 追问记录，Worker 在后台从原任务 checkpoint 读取 S/R 证据生成回答；关闭或重开 Streamlit 不会丢失排队进度和已完成问答。明确的取消、恢复、查看指令沿用现有任务调度。更新、改写、核验现在可识别但尚未接通对应执行；不会偷偷按普通追问处理。SQLite 旧任务仍可查看和按旧路径恢复，但没有后台追问。
+PostgreSQL 已完成任务的详情和历史页有“报告追问与研究操作”。可自动识别或明确选择追问、更新、改写、核验；页面将操作写入 PostgreSQL，由 Worker 后台处理，重开页面仍可查看进度和结果。追问使用原 checkpoint 的 S/R 来源；改写保存独立版本；更新与核验向 DuckDuckGo、Tavily 各请求最多 3 条并记录 U 来源，更新保存增量报告版本，核验保存结论。新版报告可在历史页展开、下载，原报告和 checkpoint 不变。明确的取消、恢复、查看指令沿用现有任务调度。SQLite 旧任务仍可查看和按旧路径恢复，但没有后台报告操作。配置 Tavily 时需提供 `TAVILY_API_KEY`；`ENABLE_TAVILY_FALLBACK` 影响其他使用统一搜索入口的路径，报告更新和核验自身固定使用双源配额。
 
 可启动多个 `worker.py` 进程。PostgreSQL 会话锁控制同时执行的研究任务和各搜索源的在途调用；Worker 强杀后连接关闭即释放名额。逐来源的分钟请求额度记录在 PostgreSQL，强杀后仍保留窗口内的已发请求，避免恢复时突发超额。队列满时 UI 明确提示，取消排队任务可腾出名额；符合领取条件的任务按创建时间排队，UI 显示查询时的等待队列位置。所有 Worker 应使用相同的全局上限配置。若 Redis 不可用，已启动的 Worker 会继续扫描 PostgreSQL；新 Worker 仍需连接队列实例后启动。跨进程公平性是任务领取顺序，不保证外部请求排队公平。
 
@@ -93,6 +93,7 @@ RUN_ID 替换为实际任务身份，并使用原后端。main.py 输出模式�
 - Reviewer：评分、降级模式、反馈与路由。
 - 任务状态：下一节点、执行尝试、已记录耗时。
 - 完成结果：报告引用、下载、记忆与缓存统计、记忆发布尝试历史。
+- 报告操作：追问回答、更新或核验的 U 来源数量与服务、独立报告版本及下载。
 
 render_aqd_subquestion 同时供实时页和历史页使用。旧 JSON 没有逐题资料字段时只能展示已有信息，不会自动补采或重跑旧研究。
 
