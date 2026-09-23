@@ -118,6 +118,12 @@ SQLite 页面按节点更新执行结果；PostgreSQL 后台模式通过查询 c
 
 每次实际发布会写入 `memory_publication_attempts`，记录触发方式、执行阶段、已有与新增向量数量、失败证据 ID，以及经过白名单筛选的异常类型和状态码。重试成功仍保留先前失败记录，页面展示最近 50 次尝试。进程被强制退出时可能留下 `running`，它表示没有记录到结束，不能直接判定为成功或失败。该机制用于定位问题，并不保证外部服务故障自动消失。
 
+### 意图识别与报告追问操作
+
+- **操作识别**：`core/intent.py` 用确定性规则处理明确的任务控制指令，并用一次结构化模型判断区分新研究、报告追问、更新、改写、核验等意图；页面也支持直接选择操作类型。分类结果只描述请求，实际执行路径由程序决定。
+- **持久化与后台处理**：`core/conversation.py` 将已完成 PostgreSQL 任务的操作排入 `conversation_turns`；`core/background.py` 的 Worker 按任务顺序领取、续租并保存结果，页面关闭后仍可处理和回看。
+- **追问与报告操作**：`core/followup.py` 从原 checkpoint 的报告及 S/R 来源回答追问，不进行新检索。`core/report_operations.py` 将改写保存为独立报告版本；更新与核验分别向 DuckDuckGo、Tavily 请求最多 3 条新资料，用独立的 U 引用记录结果。更新生成增量版本，核验保存结论，均不覆盖原报告或 checkpoint。详见[研究操作模块文档](docs/handbook/intent-and-followup.md)。
+
 ## 快速开始
 
 建议使用 Python 3.11+。默认 SQLite 模式无需安装数据库服务；模型、搜索和 BGE 接口按所启用功能配置。
