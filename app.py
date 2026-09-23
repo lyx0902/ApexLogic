@@ -412,74 +412,72 @@ def show_history_view(data: dict) -> None:
         st.warning("该记录无最终报告。")
 
     # 参考资料
-    st.markdown("---")
-    st.markdown("## 📚 参考资料")
-    refs = data.get("references", [])
-    if refs:
-        for i, ref in enumerate(refs, 1):
-            title = ref.get("title", "未知标题")
-            url = ref.get("url", "")
-            score = ref.get("score")
-            summary = ref.get("summary", "")
-            score_str = f" · 相关度 `{score:.4f}`" if score is not None else ""
-            if url:
-                st.markdown(f"**{i}.** [{title}]({url}){score_str}")
-            else:
-                st.markdown(f"**{i}.** **{title}**{score_str}")
-            if summary:
-                st.caption(summary[:180])
-    else:
-        st.info("该记录无参考资料。")
+    run_metadata = data.get("run_metadata", {})
+    with st.expander("📚 参考资料", expanded=False):
+        refs = data.get("references", [])
+        if refs:
+            for i, ref in enumerate(refs, 1):
+                title = ref.get("title", "未知标题")
+                url = ref.get("url", "")
+                score = ref.get("score")
+                summary = ref.get("summary", "")
+                score_str = f" · 相关度 `{score:.4f}`" if score is not None else ""
+                if url:
+                    st.markdown(f"**{i}.** [{title}]({url}){score_str}")
+                else:
+                    st.markdown(f"**{i}.** **{title}**{score_str}")
+                if summary:
+                    st.caption(summary[:180])
+        else:
+            st.info("该记录无参考资料。")
+
+        if run_metadata.get("cache_stats"):
+            with st.expander("历史缓存统计"):
+                st.json(run_metadata["cache_stats"])
+        render_publication_attempts(run_metadata)
+        if run_metadata.get("memory_first"):
+            with st.expander("历史记忆优先检索"):
+                st.json(run_metadata["memory_first"])
+        if run_metadata.get("memory_stats") or run_metadata.get("memory_publication"):
+            with st.expander("历史记忆使用记录"):
+                st.json({k: run_metadata.get(k) for k in ("memory_stats", "memory_used_ids", "memory_publication")})
 
     # ── IRCoT 推理链参考文献（历史记录）────────────────────────────────────
-    run_metadata = data.get("run_metadata", {})
-    if run_metadata.get("cache_stats"):
-        with st.expander("历史缓存统计"):
-            st.json(run_metadata["cache_stats"])
-    render_publication_attempts(run_metadata)
-    if run_metadata.get("memory_first"):
-        with st.expander("历史记忆优先检索"):
-            st.json(run_metadata["memory_first"])
-    if run_metadata.get("memory_stats") or run_metadata.get("memory_publication"):
-        with st.expander("历史记忆使用记录"):
-            st.json({k: run_metadata.get(k) for k in ("memory_stats", "memory_used_ids", "memory_publication")})
     h_reasoning_enabled = run_metadata.get("reasoning_enabled", False)
     h_reasoning_contexts = run_metadata.get("reasoning_contexts", [])
 
     if h_reasoning_enabled and h_reasoning_contexts:
-        st.markdown("---")
-        st.markdown("## 🧠 IRCoT 推理链参考文献")
+        with st.expander("🧠 IRCoT 推理链参考文献", expanded=False):
+            # 简略统计
+            h_reasoning_chains = run_metadata.get("reasoning_chains", [])
+            h_stat_col1, h_stat_col2, h_stat_col3 = st.columns(3)
+            h_stat_col1.metric("推理跳数", len(h_reasoning_chains))
+            h_stat_col2.metric("推理链文档数", len(h_reasoning_contexts))
 
-        # 简略统计
-        h_reasoning_chains = run_metadata.get("reasoning_chains", [])
-        h_stat_col1, h_stat_col2, h_stat_col3 = st.columns(3)
-        h_stat_col1.metric("推理跳数", len(h_reasoning_chains))
-        h_stat_col2.metric("推理链文档数", len(h_reasoning_contexts))
+            # 统计报告中的推理链引用
+            h_final_draft = data.get("final_report", "")
+            h_r_citations = len(re.findall(r'\[R\d+\]', h_final_draft))
+            h_chain_citations = len(re.findall(r'\[推理链\d+\]', h_final_draft))
+            h_stat_col3.metric("报告中引用次数", h_r_citations + h_chain_citations)
 
-        # 统计报告中的推理链引用
-        h_final_draft = data.get("final_report", "")
-        h_r_citations = len(re.findall(r'\[R\d+\]', h_final_draft))
-        h_chain_citations = len(re.findall(r'\[推理链\d+\]', h_final_draft))
-        h_stat_col3.metric("报告中引用次数", h_r_citations + h_chain_citations)
+            st.caption(
+                "以下文档由IRCoT多跳推理主动发现，独立保存在推理链通道中，"
+                "不经过BGE筛选，确保推理链补搜的关键信息不被丢弃。"
+            )
 
-        st.caption(
-            "以下文档由IRCoT多跳推理主动发现，独立保存在推理链通道中，"
-            "不经过BGE筛选，确保推理链补搜的关键信息不被丢弃。"
-        )
+            # 展示推理链文档列表
+            for idx, doc in enumerate(h_reasoning_contexts, 1):
+                title = doc.get("title", "未知标题")
+                url = doc.get("url", "")
+                summary = doc.get("summary", "")
 
-        # 展示推理链文档列表
-        for idx, doc in enumerate(h_reasoning_contexts, 1):
-            title = doc.get("title", "未知标题")
-            url = doc.get("url", "")
-            summary = doc.get("summary", "")
+                if url:
+                    st.markdown(f"**[R{idx}]** [{title}]({url})")
+                else:
+                    st.markdown(f"**[R{idx}]** {title}")
 
-            if url:
-                st.markdown(f"**[R{idx}]** [{title}]({url})")
-            else:
-                st.markdown(f"**[R{idx}]** {title}")
-
-            if summary:
-                st.caption(summary)
+                if summary:
+                    st.caption(summary)
 
     # 运行期警告（如有）
     errors = data.get("errors", [])
@@ -724,7 +722,6 @@ def show_history_view(data: dict) -> None:
                     }
                     st.info(f"**路由决策：** {route_labels.get(h_route, h_route or '未知')}")
 
-                    st.markdown("---")
 
 
 # ── Session state 初始化 ───────────────────────────────────────────────────────
