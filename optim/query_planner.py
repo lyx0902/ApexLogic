@@ -3,7 +3,7 @@
 核心思想
 --------
 将复杂研究主题结构化分解为 N 个带依赖关系的子问题，
-按拓扑顺序逐一检索，确保多跳推理场景中的系统性覆盖。
+按依赖就绪批次检索，确保多跳推理场景中的系统性覆盖。
 
 执行流程：
   1. LLM 将研究主题（结合初始上下文）分解为 N 个子问题，每个子问题包含：
@@ -11,7 +11,7 @@
      - search_query: 可直接用于搜索引擎的查询字符串
      - depends_on  : 依赖的其他子问题 ID 列表（构成 DAG）
   2. 拓扑排序（Kahn 算法），按依赖关系确定执行顺序
-  3. 逐子问题执行 DuckDuckGo 补搜，跳过与已有查询高度重叠的子问题
+  3. 同批独立子问题并发补搜；下游结合上游实际命中的标题，跳过重复查询
   4. 返回所有新检索文档供调用方合并去重
 
 与现有模块的关系
@@ -30,6 +30,7 @@ AQD_RESULTS_PER_SUBQ  (默认 "3") – 每个子问题的 DDG 检索结果数
 
 from __future__ import annotations
 from optim.query_text import strip_list_marker
+from optim.parallel_search import map_in_order, runtime_limit
 
 import json
 from core.run_config import setting
@@ -98,6 +99,28 @@ def _topological_sort(sub_questions: List[Dict[str, Any]]) -> List[Dict[str, Any
         return list(sub_questions)
 
     return sorted_result
+
+
+def _dependency_query(base_query: str, dependencies: List[int], completed: Dict[int, Dict[str, Any]]) -> tuple[str, list, list]:
+    """Ground a dependent query in titles actually returned by its parents."""
+    evidence, hints, unresolved = [], [], []
+    for dep_id in dependencies:
+        docs = completed.get(dep_id, {}).get("raw_docs", [])
+        for doc in docs:
+            title = re.sub(r"\s+", " ", str(doc.get("title", ""))).strip()[:80]
+            if title:
+                evidence.append({"subquestion_id": dep_id, "title": title,
+                                 "url": str(doc.get("url", ""))[:300],
+                                 "excerpt": re.sub(r"\s+", " ", str(doc.get("content", ""))).strip()[:180]})
+                if title.casefold() not in base_query.casefold():
+                    hints.append(title)
+                break
+        else:
+            unresolved.append(dep_id)
+    room = max(0, 240 - len(base_query) - 1)
+    suffix = " ".join(hints)[:room]
+    query = base_query + (" " + suffix if suffix else "")
+    return query, evidence, unresolved
 
 
 # ── JSON 解析辅助 ──────────────────────────────────────────────────────
@@ -216,6 +239,12 @@ def _parse_decompose_response(
                             ],
                         })
                     if validated:
+                        if len({q["id"] for q in validated}) != len(validated):
+                            # Ambiguous model IDs cannot define a trustworthy DAG.
+                            # Keep every question, but search them independently.
+                            for index, q in enumerate(validated, start=1):
+                                q["id"] = index
+                                q["depends_on"] = []
                         return validated[:n_expected]
         except Exception:
             pass
@@ -364,6 +393,7 @@ class AdaptiveQueryPlanner:
         contexts: List[Dict[str, Any]],
         existing_queries: Optional[List[str]] = None,
         sub_questions: Optional[List[Dict[str, Any]]] = None,
+        prior_search_records: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """执行自适应查询分解与检索。
 
@@ -372,6 +402,7 @@ class AdaptiveQueryPlanner:
         topic           : 研究主题
         contexts        : 已归一化的初始上下文列表（含 core_summary，供 LLM 参考）
         existing_queries: 已有查询（避免生成重复子问题）
+        prior_search_records: 已有广搜审计，用实际返回资料为免搜父题提供依赖上下文
 
         返回
         ----
@@ -398,54 +429,89 @@ class AdaptiveQueryPlanner:
         if not sub_questions:
             return [], {"enabled": False, "reason": "decompose_failed"}
 
-        # 2. 拓扑排序：按依赖关系确定执行顺序
         ordered = _topological_sort(sub_questions)
-
-        # 3. 按序逐子问题检索
+        known_ids = {sq["id"] for sq in ordered}
+        remaining = list(ordered)
+        completed: Dict[int, Dict[str, Any]] = {}
+        completed_queries: Dict[str, List[Dict[str, Any]]] = {}
+        waves: List[List[int]] = []
+        cycle_fallback = False
         all_gap_contexts: List[Dict[str, Any]] = []
         sub_results: List[Dict[str, Any]] = []
+        max_workers = runtime_limit("APEXLOGIC_AQD_MAX_WORKERS", 2)
 
         from optim.search_audit import search_with_audit
-        for sq in ordered:
-            sq_id = sq["id"]
-            question = sq["question"]
-            search_query = sq["search_query"]
-            depends_on = sq.get("depends_on", [])
 
-            # 跳过与已有查询高度重叠的搜索
-            sq_lower = search_query.lower()
-            is_dup = any(sq_lower in eq or eq in sq_lower for eq in existing_set)
+        def search_one(item):
+            sq, resolved_query, is_dup, evidence, unresolved = item
+            records, new_docs = [], []
+            available = _DDG_AVAILABLE and duckduckgo_search is not None
+            if not is_dup and available:
+                try:
+                    new_docs = search_with_audit(records, "duckduckgo", resolved_query,
+                                                 self.results_per_subq, duckduckgo_search)
+                except Exception:
+                    pass  # search_with_audit keeps the exception type in its record
+            prior_docs = []
+            if is_dup:
+                for record in prior_search_records or []:
+                    old_query = str(record.get("query", "")).casefold()
+                    if old_query and (resolved_query.casefold() in old_query or
+                                      old_query in resolved_query.casefold()):
+                        prior_docs.extend({**doc, "content": doc.get("excerpt", "")}
+                                          for doc in record.get("retrieved_docs", []))
+            return {"id": sq["id"], "question": sq["question"],
+                    "search_query": sq["search_query"], "resolved_query": resolved_query,
+                    "depends_on": sq.get("depends_on", []),
+                    "dependency_evidence": evidence, "unresolved_dependencies": unresolved,
+                    "new_docs": len(new_docs), "skipped": is_dup,
+                    "search_unavailable": not is_dup and not available,
+                    "search_records": records,
+                    "retrieved_docs": [d for record in records for d in record["retrieved_docs"]],
+                    "raw_docs": new_docs, "dependency_docs": new_docs or prior_docs}
 
-            new_docs: List[Dict[str, Any]] = []
-            records = []
-            if not is_dup:
-                # The legacy helper swallows failures; audit the provider directly here.
-                if _DDG_AVAILABLE and duckduckgo_search is not None:
-                    try:
-                        new_docs = search_with_audit(records, "duckduckgo", search_query,
-                                                     self.results_per_subq, duckduckgo_search)
-                    except Exception:
-                        new_docs = []
-                all_gap_contexts.extend(new_docs)
-                existing_set.add(sq_lower)
-
-            sub_results.append({
-                "id": sq_id,
-                "question": question,
-                "search_query": search_query,
-                "depends_on": depends_on,
-                "new_docs": len(new_docs),
-                "skipped": is_dup,
-                "search_unavailable": not is_dup and (not _DDG_AVAILABLE or duckduckgo_search is None),
-                "search_records": records,
-                "retrieved_docs": [d for r in records for d in r["retrieved_docs"]],
-            })
+        while remaining:
+            ready = [sq for sq in remaining if all(dep not in known_ids or dep in completed
+                     for dep in sq.get("depends_on", []))]
+            if not ready:
+                # Invalid legacy cycles cannot deadlock the research node.
+                ready = [remaining[0]]
+                cycle_fallback = True
+            waves.append([sq["id"] for sq in ready])
+            items = []
+            for sq in ready:
+                resolved, evidence, unresolved = _dependency_query(
+                    sq["search_query"], sq.get("depends_on", []), completed)
+                unresolved.extend(dep for dep in sq.get("depends_on", []) if dep not in known_ids)
+                key = resolved.casefold()
+                # A parent finding makes an otherwise identical broad query a
+                # distinct request; independent queries keep fuzzy dedupe.
+                is_dup = (key in existing_set if evidence else
+                          any(key in old or old in key for old in existing_set))
+                if not is_dup:
+                    existing_set.add(key)
+                items.append((sq, resolved, is_dup, evidence, list(dict.fromkeys(unresolved))))
+            results = map_in_order(search_one, items, max_workers)
+            for result in results:
+                key = result["resolved_query"].casefold()
+                dependency_docs = result["dependency_docs"] or completed_queries.get(key, [])
+                completed[result["id"]] = {"raw_docs": dependency_docs}
+                if dependency_docs:
+                    completed_queries[key] = dependency_docs
+                all_gap_contexts.extend(result["raw_docs"])
+                sub_results.append({key: value for key, value in result.items()
+                                    if key not in {"raw_docs", "dependency_docs"}})
+            ready_ids = {sq["id"] for sq in ready}
+            remaining = [sq for sq in remaining if sq["id"] not in ready_ids]
 
         plan_summary: Dict[str, Any] = {
             "enabled": True,
             "reused_pre_search_plan": reused_plan,
             "sub_questions_count": len(sub_questions),
             "execution_order": [sq["id"] for sq in ordered],
+            "execution_waves": waves,
+            "max_workers": max_workers,
+            "dependency_cycle_fallback": cycle_fallback,
             "total_new_docs": len(all_gap_contexts),
             "sub_results": sub_results,
         }

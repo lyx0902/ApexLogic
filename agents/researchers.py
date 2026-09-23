@@ -1,9 +1,11 @@
 from __future__ import annotations
 from optim.search_audit import search_with_audit, describe, annotate_selection
+from optim.parallel_search import map_in_order, runtime_limit
 
 from core.run_config import configured_node, setting
 from optim.query_text import strip_list_marker
 import re
+from threading import Semaphore
 from typing import Any, Dict, List, Optional
 
 try:
@@ -27,7 +29,7 @@ from tools.search_tool import duckduckgo_search, tavily_search
 from optim.mab_search import ThompsonSamplingMAB, compute_source_rewards
 from optim.graph_expand import expand_queries_from_contexts
 from optim.iterative_retrieval import IterativeRetrievalOptimizer
-from optim.query_planner import AdaptiveQueryPlanner
+from optim.query_planner import AdaptiveQueryPlanner, _dependency_query
 
 
 def _append_error(errors: List[str], message: str) -> List[str]:
@@ -369,45 +371,51 @@ def _collect_broad_contexts(
         extra = 1 if idx < (total % q_count) else 0
         return max(base + extra, 0)
 
-    search_records = []
+    max_workers = runtime_limit("APEXLOGIC_BROAD_MAX_WORKERS", 4)
+    provider_limits = {
+        "duckduckgo": min(max_workers, runtime_limit("APEXLOGIC_BROAD_DDG_MAX_INFLIGHT", 2)),
+        "arxiv": min(max_workers, runtime_limit("APEXLOGIC_BROAD_ARXIV_MAX_INFLIGHT", 1)),
+        "tavily": min(max_workers, runtime_limit("APEXLOGIC_BROAD_TAVILY_MAX_INFLIGHT", 1)),
+    }
+    semaphores = {name: Semaphore(limit) for name, limit in provider_limits.items()}
+    providers = (
+        ("duckduckgo", ddg_total, duckduckgo_search),
+        ("arxiv", arxiv_total, arxiv_search),
+        ("tavily", tavily_total, tavily_search),
+    )
+    tasks = []
     for idx, query in enumerate(queries):
-        record_start = len(search_records)
-        ddg_k = _per_query(ddg_total, idx)
-        arxiv_k = _per_query(arxiv_total, idx)
-        tavily_k = _per_query(tavily_total, idx)
+        for provider, total, search in providers:
+            limit = _per_query(total, idx)
+            if limit > 0:
+                provider_stats[provider]["planned"] += limit
+                tasks.append((idx, query, provider, limit, search))
 
-        if ddg_k > 0:
-            provider_stats["duckduckgo"]["planned"] += ddg_k
-            try:
-                got = search_with_audit(search_records, "duckduckgo", query, ddg_k, duckduckgo_search)
-                contexts.extend(got)
-                provider_stats["duckduckgo"]["fetched"] += len(got)
-            except Exception as exc:
-                errors = _append_error(errors, f"DDG 检索失败: {exc}")
-                provider_stats["duckduckgo"]["failed"] += ddg_k
+    def _search_one(task):
+        _, query, provider, limit, search = task
+        records = []
+        try:
+            with semaphores[provider]:
+                docs = search_with_audit(records, provider, query, limit, search)
+            return docs, records, None
+        except Exception as exc:
+            return [], records, exc
 
-        if arxiv_k > 0:
-            provider_stats["arxiv"]["planned"] += arxiv_k
-            try:
-                got = search_with_audit(search_records, "arxiv", query, arxiv_k, arxiv_search)
-                contexts.extend(got)
-                provider_stats["arxiv"]["fetched"] += len(got)
-            except Exception as exc:
-                errors = _append_error(errors, f"ArXiv 检索失败: {exc}")
-                provider_stats["arxiv"]["failed"] += arxiv_k
+    results = map_in_order(_search_one, tasks, max_workers)
 
-        if tavily_k > 0:
-            provider_stats["tavily"]["planned"] += tavily_k
-            try:
-                got = search_with_audit(search_records, "tavily", query, tavily_k, tavily_search)
-                contexts.extend(got)
-                provider_stats["tavily"]["fetched"] += len(got)
-            except Exception as exc:
-                errors = _append_error(errors, f"Tavily 检索失败: {exc}")
-                provider_stats["tavily"]["failed"] += tavily_k
-
-        for record in search_records[record_start:]:
+    search_records = []
+    error_labels = {"duckduckgo": "DDG", "arxiv": "ArXiv", "tavily": "Tavily"}
+    for task, (docs, records, failure) in zip(tasks, results):
+        idx, _, provider, limit, _ = task
+        for record in records:
             record["query_index"] = idx
+        search_records.extend(records)
+        if failure is None:
+            contexts.extend(docs)
+            provider_stats[provider]["fetched"] += len(docs)
+        else:
+            errors = _append_error(errors, f"{error_labels[provider]} 检索失败: {failure}")
+            provider_stats[provider]["failed"] += limit
 
     summary = {
         "broad_targets": {
@@ -427,6 +435,7 @@ def _collect_broad_contexts(
             + provider_stats["tavily"]["planned"]
         ),
         "broad_total": len(contexts),
+        "broad_concurrency": {"max_workers": max_workers, "provider_limits": provider_limits},
         "search_records": search_records,
     }
     return contexts, errors, summary
@@ -461,9 +470,29 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     memory_first = early["summary"]
     memory_hits, memory_stats = early["hits"], early["stats"]
     query_budget = int(setting("SEARCH_QUERY_BUDGET", "3"))
+    memory_broad_questions = []
+    memory_completed = {}
+    memory_resolution = {}
+    memory_waves = []
     if memory_first["applied"]:
         queries = [q["search_query"] for q in early["questions"]]
-        effective_queries = [q["search_query"] for q in early["remaining"]][:query_budget]
+        remaining_ids = {q["id"] for q in early["remaining"]}
+        by_memory_id = {hit["memory_id"]: hit for hit in memory_hits}
+        for q in memory_first["subquestions"]:
+            if q["search_skipped"]:
+                memory_completed[q["id"]] = {"raw_docs": [by_memory_id[mid] for mid in q["evidence_ids"]
+                                                   if mid in by_memory_id]}
+        ready = [q for q in early["remaining"] if not any(
+            dep in remaining_ids for dep in q.get("depends_on", []))]
+        memory_broad_questions = ready[:query_budget]
+        if memory_broad_questions:
+            memory_waves.append([q["id"] for q in memory_broad_questions])
+        effective_queries = []
+        for q in memory_broad_questions:
+            resolved, evidence, unresolved = _dependency_query(
+                q["search_query"], q.get("depends_on", []), memory_completed)
+            memory_resolution[q["id"]] = (resolved, evidence, unresolved)
+            effective_queries.append(resolved)
     else:
         try:
             queries = _rewrite_queries_with_llm(
@@ -491,17 +520,48 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
     graph_search_records = []
     if memory_first["applied"]:
         for record in search_records:
-            record["subquestion_id"] = early["remaining"][record["query_index"]]["id"]
-        for q in early["remaining"][query_budget:]:
-            record_start = len(search_records)
-            try:
-                got = search_with_audit(search_records, "duckduckgo", q["search_query"],
-                                        int(setting("AQD_RESULTS_PER_SUBQ", "3")), duckduckgo_search)
-                contexts.extend(got)
-            except Exception as exc:
-                errors = _append_error(errors, f"记忆未覆盖子问题补搜失败: {type(exc).__name__}")
-            for record in search_records[record_start:]:
-                record["subquestion_id"] = q["id"]
+            record["subquestion_id"] = memory_broad_questions[record["query_index"]]["id"]
+        for q in memory_broad_questions:
+            memory_completed[q["id"]] = {"raw_docs": [
+                {**doc, "content": doc.get("excerpt", "")}
+                for record in search_records if record["subquestion_id"] == q["id"]
+                for doc in record["retrieved_docs"]]}
+        pending = [q for q in early["remaining"] if q not in memory_broad_questions]
+        while pending:
+            ready = [q for q in pending if all(dep not in remaining_ids or dep in memory_completed
+                     for dep in q.get("depends_on", []))]
+            if not ready:
+                ready = [pending[0]]  # Invalid legacy cycle: keep the run progressing.
+            memory_waves.append([q["id"] for q in ready])
+            items = []
+            for q in ready:
+                resolved, evidence, unresolved = _dependency_query(
+                    q["search_query"], q.get("depends_on", []), memory_completed)
+                memory_resolution[q["id"]] = (resolved, evidence, unresolved)
+                items.append((q, resolved))
+
+            def search_memory_gap(item):
+                q, resolved = item
+                records = []
+                try:
+                    docs = search_with_audit(records, "duckduckgo", resolved,
+                                             int(setting("AQD_RESULTS_PER_SUBQ", "3")), duckduckgo_search)
+                    return q["id"], docs, records, None
+                except Exception as exc:
+                    return q["id"], [], records, type(exc).__name__
+
+            for qid, docs, records, failure in map_in_order(
+                search_memory_gap, items, runtime_limit("APEXLOGIC_AQD_MAX_WORKERS", 2)
+            ):
+                for record in records:
+                    record["subquestion_id"] = qid
+                search_records.extend(records)
+                contexts.extend(docs)
+                memory_completed[qid] = {"raw_docs": docs}
+                if failure:
+                    errors = _append_error(errors, f"记忆未覆盖子问题补搜失败: {failure}")
+            ready_ids = {q["id"] for q in ready}
+            pending = [q for q in pending if q["id"] not in ready_ids]
     contexts = list(contexts) + memory_hits
 
     # 确保在无外部依赖时流程仍然有上下文可用
@@ -531,12 +591,20 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
             if extra_queries:
                 # 用 DDG 对扩展查询各搜少量结果（每条 3 条），不走 MAB 分配
                 extra_contexts: List[Dict[str, Any] | str] = []
-                for eq in extra_queries:
+                def search_graph(eq):
+                    records = []
                     try:
-                        got = search_with_audit(graph_search_records, "duckduckgo", eq, 3, duckduckgo_search)
-                        extra_contexts.extend(got)
+                        got = search_with_audit(records, "duckduckgo", eq, 3, duckduckgo_search)
+                        return got, records, None
                     except Exception as exc:
-                        errors = _append_error(errors, f"图扩展查询 DDG 失败: {exc}")
+                        return [], records, type(exc).__name__
+                for got, records, failure in map_in_order(
+                    search_graph, extra_queries, runtime_limit("APEXLOGIC_GRAPH_MAX_WORKERS", 2)
+                ):
+                    graph_search_records.extend(records)
+                    extra_contexts.extend(got)
+                    if failure:
+                        errors = _append_error(errors, f"图扩展查询 DDG 失败: {failure}")
                 if extra_contexts:
                     merged = _dedupe_and_index_contexts(list(contexts) + list(extra_contexts))
                     normalized_contexts = merged
@@ -558,12 +626,16 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
         for q in memory_first["subquestions"]:
             records = [r for r in search_records if r.get("subquestion_id") == q["id"]] if not q["search_skipped"] else []
             docs = [d for r in records for d in r["retrieved_docs"]]
+            resolved, evidence, unresolved = memory_resolution.get(q["id"], (q["search_query"], [], []))
             sub_results.append({**q, "skipped": q["search_skipped"], "new_docs": len(docs),
+                                "resolved_query": resolved, "dependency_evidence": evidence,
+                                "unresolved_dependencies": unresolved,
                                 "search_records": records, "retrieved_docs": docs,
                                 "memory_docs": [describe(h) for h in memory_hits if h["memory_id"] in q["recalled_ids"]],
                                 "search_stage": "memory" if q["search_skipped"] else "broad_or_gap_search"})
         query_plan = {"enabled": True, "mode": "memory_first", "sub_questions_count": len(early["questions"]),
                       "execution_order": [q["id"] for q in early["questions"]],
+                      "execution_waves": memory_waves,
                       "total_new_docs": sum(len(r["retrieved_docs"]) for r in search_records),
                       "sub_results": sub_results}
 
@@ -580,6 +652,7 @@ def researcher_node(state: ResearchState) -> Dict[str, Any]:
                 topic=topic,
                 contexts=normalized_contexts,
                 existing_queries=effective_queries,
+                prior_search_records=search_records,
                 **({"sub_questions": early["questions"]} if early["questions"] else {}),
             )
             if aqd_contexts:

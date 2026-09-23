@@ -29,6 +29,7 @@ GAP_RESULTS_PER_QUERY        (默认 "4")  – 每条补充查询的 DDG 结果�
 
 from __future__ import annotations
 from optim.query_text import strip_list_marker
+from optim.parallel_search import map_in_order, runtime_limit
 
 import json
 from core.run_config import setting
@@ -276,12 +277,9 @@ class IterativeRetrievalOptimizer:
     def _search_gap(self, query: str) -> List[Dict[str, Any]]:
         """对单条 gap 查询执行 DuckDuckGo 搜索，返回原始结果列表。"""
         if not _DDG_AVAILABLE or duckduckgo_search is None:
-            return []
-        try:
-            results = duckduckgo_search(query, max_results=self.results_per_query)
-            return [r for r in (results or []) if isinstance(r, dict)]
-        except Exception:
-            return []
+            raise RuntimeError("DuckDuckGo unavailable")
+        results = duckduckgo_search(query, max_results=self.results_per_query)
+        return [r for r in (results or []) if isinstance(r, dict)]
 
     # ── 内部：首跳文档智能排序 ────────────────────────────────────────
 
@@ -443,10 +441,27 @@ class IterativeRetrievalOptimizer:
                 break
 
             # 4. 执行补搜
-            hop_new_contexts: List[Dict[str, Any]] = []
-            for q in filtered_queries:
-                results = self._search_gap(q)
-                hop_new_contexts.extend(results)
+            # Each hop observes the complete, centrally merged result of the
+            # preceding hop. Only independent queries inside this hop run in parallel.
+            from optim.search_audit import search_with_audit
+
+            def search_one(query):
+                records = []
+                try:
+                    docs = search_with_audit(
+                        records, "duckduckgo", query, self.results_per_query,
+                        lambda q, max_results: self._search_gap(q),
+                    )
+                except Exception:
+                    docs = []
+                return docs, records
+
+            per_query = map_in_order(
+                search_one, filtered_queries,
+                runtime_limit("APEXLOGIC_IRCOT_MAX_WORKERS", 2),
+            )
+            hop_new_contexts = [doc for docs, _ in per_query for doc in docs]
+            search_records = [record for _, records in per_query for record in records]
 
             all_gap_contexts.extend(hop_new_contexts)
 
@@ -456,6 +471,8 @@ class IterativeRetrievalOptimizer:
                 "reasoning_preview": (reasoning or "")[:150],
                 "reasoning_full": (reasoning or ""),
                 "gap_queries": filtered_queries,
+                "query_result_counts": [len(docs) for docs, _ in per_query],
+                "search_records": search_records,
                 "new_contexts": len(hop_new_contexts),
                 "retrieved_docs": [
                     {"title": r.get("title", ""), "url": r.get("url", "")}

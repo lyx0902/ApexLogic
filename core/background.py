@@ -11,6 +11,7 @@ from uuid import uuid4
 from core.persistence import RunBusyError, validate_run_id
 from core.postgres import connect
 from core.runner import ResearchRunner
+from core.service_limits import capacity, global_slot, reserve_queue_room
 
 
 GROUP = "apexlogic-workers"
@@ -35,7 +36,7 @@ class BackgroundScheduler:
         if runner.storage["backend"] != "postgres":
             raise ValueError("后台调度仅支持 PostgreSQL；旧 SQLite 任务仍按原方式执行")
         with connect() as db:
-            if not db.execute("SELECT 1 FROM schema_migrations WHERE version=3").fetchone():
+            if not db.execute("SELECT 1 FROM schema_migrations WHERE version=4").fetchone():
                 raise RuntimeError("后台调度表尚未初始化；请运行 python -m scripts.postgres_admin init")
         self.runner = runner
 
@@ -58,6 +59,7 @@ class BackgroundScheduler:
                 return "cancel_requested" if row["cancel_requested"] else "running"
             if row and row["status"] == "queued" and not row["cancel_requested"]:
                 return "queued"
+            reserve_queue_room(db)
             db.execute("""INSERT INTO research_jobs(run_id,status,updated_at)
                 VALUES (%s,'queued',now()) ON CONFLICT(run_id) DO UPDATE
                 SET status='queued',cancel_requested=false,lease_owner=NULL,lease_until=NULL,
@@ -69,7 +71,19 @@ class BackgroundScheduler:
         validate_run_id(run_id)
         with connect() as db:
             row = db.execute("SELECT * FROM research_jobs WHERE run_id=%s", (run_id,)).fetchone()
-        return dict(row) if row else None
+            if not row:
+                return None
+            result = dict(row)
+            if row["status"] == "queued" and not row["cancel_requested"]:
+                position = db.execute("""SELECT count(*) AS n FROM research_jobs j
+                    JOIN runs r ON r.run_id=j.run_id
+                    JOIN runs target ON target.run_id=%s
+                    WHERE j.status='queued' AND j.cancel_requested=false AND
+                    (r.created_at<target.created_at OR
+                     (r.created_at=target.created_at AND j.run_id<=%s))""",
+                    (run_id, run_id)).fetchone()
+                result["queue_position"] = position["n"]
+        return result
 
     def cancel(self, run_id):
         validate_run_id(run_id)
@@ -119,6 +133,20 @@ class BackgroundWorker:
 
     def _claim(self, run_id):
         with connect() as db:
+            # Serialize claims and admit the oldest eligible job first, even
+            # when Redis messages arrive out of order on different Workers.
+            from core.postgres import lock_key
+            db.execute("SELECT pg_advisory_xact_lock(%s)",
+                       (lock_key("apexlogic:queue:claim"),))
+            oldest = db.execute("""SELECT j.run_id FROM research_jobs j
+                JOIN runs r ON r.run_id=j.run_id
+                WHERE j.cancel_requested=false AND
+                ((j.status='queued' AND (j.last_error IS NULL OR
+                  j.updated_at<now()-interval '30 seconds')) OR
+                 (j.status='running' AND j.lease_until<now()))
+                ORDER BY r.created_at,j.run_id LIMIT 1""").fetchone()
+            if not oldest or oldest["run_id"] != run_id:
+                return False
             row = db.execute("""UPDATE research_jobs SET status='running',lease_owner=%s,
                 lease_until=now()+(%s * interval '1 second'),updated_at=now(),
                 last_error=NULL WHERE run_id=%s AND cancel_requested=false AND
@@ -152,6 +180,12 @@ class BackgroundWorker:
 
     def process(self, run_id):
         validate_run_id(run_id)
+        with global_slot("research", capacity("APEXLOGIC_GLOBAL_RESEARCH_MAX_INFLIGHT", 2)) as admitted:
+            if not admitted:
+                return False
+            return self._process_with_slot(run_id)
+
+    def _process_with_slot(self, run_id):
         if not self._claim(run_id):
             return False
         stop = threading.Event()
@@ -208,7 +242,8 @@ class BackgroundWorker:
                 ((status='queued' AND (last_error IS NULL OR
                   updated_at<now()-interval '30 seconds')) OR
                  (status='running' AND lease_until<now()))
-                ORDER BY updated_at LIMIT 20""").fetchall()
+                ORDER BY (SELECT created_at FROM runs WHERE runs.run_id=research_jobs.run_id),run_id
+                LIMIT 20""").fetchall()
         for row in cancelled:
             try:
                 # Only settle a lost worker after the authoritative run lock is free.

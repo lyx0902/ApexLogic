@@ -62,7 +62,7 @@ SQLite 使用进程间文件锁；PostgreSQL 使用会话 advisory lock，执行
 
 研究配置和 research_as_of 在创建时冻结；密钥、数据库连接及部分基础设施配置仍从当前环境读取。详细分类见[使用与配置](operations.md)。
 
-## PostgreSQL 后台单 Worker
+## PostgreSQL 后台多 Worker
 
 Streamlit 的 PostgreSQL 路径现在只提交和查询任务。`BackgroundScheduler.submit` 在同一事务写入 `runs`、`research_jobs` 和 `research_outbox`；Worker 将 outbox 通知投到独立 Redis Stream，消费者组收到后领取 PostgreSQL 租约。Redis 消息仅用于唤醒，周期扫描 PostgreSQL 会补偿丢失的通知和过期租约。重复通知必须再次竞争领取，研究图仍由原有 PostgreSQL advisory lock 排他执行。
 
@@ -70,7 +70,7 @@ Worker 通过 `ResearchRunner.stream` 执行，保留原配置快照与 checkpoi
 
 研究完成后，Worker 从最终状态和 checkpoint 历史生成与普通 Streamlit 任务相同的 appstats 展示快照。快照生成失败只记录 `HistoryExport:*` 诊断，研究仍保持完成；再次打开该任务时可从 checkpoint 补建，无需重新调用研究节点。
 
-调度状态 `queued/running/completed/cancelled` 与研究状态 `created/running/interrupted/completed` 分开。Worker 失联后租约到期可接管；实际恢复位置以 checkpoint 为准。当前仅提供一个 Worker 的运行和验证口径，多 Worker 公平排队与全局限流尚未实现。CLI `main.py` 仍支持旧任务直接执行；不要对同一个后台任务同时使用 CLI 恢复。
+调度状态 `queued/running/completed/cancelled` 与研究状态 `created/running/interrupted/completed` 分开。Worker 失联后租约到期可接管；实际恢复位置以 checkpoint 为准。多个 Worker 可并行领取不同任务；领取事务按创建时间选择最早符合条件的任务。`APEXLOGIC_QUEUE_MAX_PENDING` 在提交事务中限制等待任务数量，满额提交不创建孤立 run。PostgreSQL 会话 advisory lock 将同时运行的任务限制在 `APEXLOGIC_GLOBAL_RESEARCH_MAX_INFLIGHT` 内，并分别限制 DDG、arXiv、Tavily 的在途请求；连接在进程崩溃时释放。版本 4 表保存逐来源滚动一分钟请求票据，崩溃后的票据不会丢失。所有 Worker 必须使用相同的全局上限配置。等待 provider 名额或分钟配额超过 `APEXLOGIC_PROVIDER_WAIT_SECONDS` 会作为该次搜索失败进入审计。CLI `main.py` 仍支持旧任务直接执行；不要对同一个后台任务同时使用 CLI 恢复。
 
 启动及验证步骤见[使用与配置](operations.md)。
 

@@ -5,6 +5,7 @@ from core.persistence import validate_run_id
 from core.run_config import SCHEMA_VERSION, WORKFLOW_VERSION, config_hash
 from core.run_repository import utc_now
 from core.postgres import connect, require_schema
+from core.service_limits import reserve_queue_room
 
 
 class PostgresRunRepository:
@@ -25,6 +26,8 @@ class PostgresRunRepository:
         run_id = uuid4().hex
         now = utc_now()
         with self.connect() as db:
+            if enqueue:
+                reserve_queue_room(db)
             db.execute("""INSERT INTO runs
                 (run_id,thread_id,topic,status,created_at,updated_at,config_json,config_hash,schema_version,workflow_version)
                 VALUES (%s,%s,%s,'created',%s,%s,%s,%s,%s,%s)""",

@@ -38,6 +38,8 @@ tests/conftest.py 默认隔离生产存储和缓存配置。真实服务测试�
 
 文件均位于 tests 目录。这里不固定测试条数，避免新增测试后文档宣称过时的通过数量。
 
+广搜并发测试在 `test_retrieval_cleanup.py` 使用模拟延迟，核对来源并发上限、冻结配置传递、缓存计数、异常审计以及串行/并发结果顺序一致。它不证明真实 provider 有稳定提速；真实验证须在相同配额、主题、缓存状态和服务条件下分别运行总线程数 1 与默认并发，并记录实际外部调用数、错误和报告质量。
+
 ## 基础设施集成
 
 PostgreSQL 测试需设置 APEXLOGIC_TEST_POSTGRES_DSN，账号须有 CREATEDB 权限。fixture 会建立随机 apexlogic_test_<uuid> 数据库，结束后删除测试库，覆盖初始化重放、进程崩溃恢复、锁、记忆导入与发布等。
@@ -56,7 +58,7 @@ $env:APEXLOGIC_TEST_BACKGROUND_EXCLUSIVE = '1'
 .\.venv\Scripts\python.exe -m pytest -q tests/test_background.py
 ```
 
-历史快照的离线投影和排序测试为 `tests/test_history.py`。这些测试不等于真实供应商端到端稳定性验证，也不覆盖多 Worker 公平调度。
+历史快照的离线投影和排序测试为 `tests/test_history.py`。`tests/test_parallel_governance.py` 用模拟延迟验证有界并发、稳定合并、AQD 依赖、IRCoT 跳间屏障和全局名额耗尽。独占的 `test_background.py` 另核对排队容量、跨 Worker 入场、跨进程 provider 名额与分钟配额。模拟测试不等于真实供应商端到端稳定性验证；真实 PostgreSQL 和多 Worker 的压测需在独占测试环境执行。
 
 执行前安装对应可选依赖。PostgreSQL 初始迁移 SQL 必须随源码可用。
 

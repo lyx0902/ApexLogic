@@ -157,5 +157,13 @@ def initialize():
             if queue_version is None:
                 conn.execute(queue_sql)
                 conn.execute("INSERT INTO schema_migrations VALUES (3,%s)", (queue_checksum,))
+            rates_sql = (Path(__file__).parent.parent / "migrations/postgres/004_provider_rates.sql").read_text(encoding="utf-8")
+            rates_checksum = hashlib.sha256(rates_sql.encode()).hexdigest()
+            rates_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=4").fetchone()
+            if rates_version and rates_version["checksum"] != rates_checksum:
+                raise RuntimeError("Provider rate migration checksum differs")
+            if rates_version is None:
+                conn.execute(rates_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (4,%s)", (rates_checksum,))
         conn.execute("SET search_path TO apexlogic_checkpoints,public")
         PostgresSaver(conn).setup()

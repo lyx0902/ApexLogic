@@ -29,7 +29,7 @@ SQLite 为默认持久化后端，无需 Docker；数据写在项目 data 目录
 | 记忆策略快照 | memory、memory_first、namespace | 同上；旧任务缺字段走兼容默认 |
 | 任务时间 | research_as_of | 创建时冻结，恢复不变成当前日期 |
 | 密钥 | DEEPSEEK_API_KEY、BGE_EMBED_API_KEY 等 | 不保存到快照，执行时读取当前环境 |
-| 连接与缓存运行参数 | PostgreSQL DSN、Redis 开关 / 连接 / TTL、强制刷新 | 当前环境；应用重启后使用新配置 |
+| 连接、缓存与并发运行参数 | PostgreSQL DSN、Redis 开关 / 连接 / TTL、强制刷新、检索线程与全局名额、排队容量 | 当前环境；应用重启后使用新配置 |
 
 变更 .env 后要体验新的研究策略，应重启应用并新建任务，不直接改历史配置和哈希。
 
@@ -39,6 +39,9 @@ SQLite 为默认持久化后端，无需 Docker；数据写在项目 data 目录
 | --- | --- | --- |
 | 评审 | MAX_REVISIONS、REVIEWER_PASS_THRESHOLD、REVIEWER_ALLOW_DEGRADED_PASS | [写作与评审](writing-review.md) |
 | 搜索 | SEARCH_QUERY_BUDGET、GRAPH_EXPAND_QUERIES、AQD_*、MAX_HOPS | [检索编排](retrieval.md) |
+| 广搜并发 | APEXLOGIC_BROAD_MAX_WORKERS、APEXLOGIC_BROAD_*_MAX_INFLIGHT | [检索编排](retrieval.md) |
+| AQD、IRCoT 与图扩展并发 | APEXLOGIC_AQD_MAX_WORKERS、APEXLOGIC_IRCOT_MAX_WORKERS、APEXLOGIC_GRAPH_MAX_WORKERS | [检索编排](retrieval.md) |
+| 后台容量 | APEXLOGIC_GLOBAL_*_MAX_INFLIGHT、APEXLOGIC_GLOBAL_*_PER_MINUTE、APEXLOGIC_QUEUE_MAX_PENDING、APEXLOGIC_PROVIDER_WAIT_SECONDS | [执行与恢复](execution.md) |
 | 排序 | BGE_RETRIEVER_*、BGE_RERANKER_*、BGE_EMBED_*、BGE_RERANK_* | [排序](ranking.md) |
 | 记忆内容 | MEMORY_ENABLED、MEMORY_TOP_K、MEMORY_MIN_SCORE、MEMORY_TTL_DAYS、MEMORY_CHAR_BUDGET | [来源记忆](memory.md) |
 | 免搜策略 | MEMORY_FIRST_MODE | [记忆优先调度](memory-policy.md) |
@@ -51,7 +54,7 @@ MEMORY_FIRST_MODE 和 Redis 参数需按需加入 .env；不要假设示例文�
 
 ## 后台 Worker（PostgreSQL）
 
-先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用版本 3 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
+先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用后台调度版本 3 与来源速率版本 4 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-redis.txt
@@ -64,7 +67,7 @@ docker compose -f compose.postgres.yml -f compose.queue.yml up -d --wait
 
 Worker 完成后会写入 `appstats/run_<run_id>.json`。历史记录按完成时间排序；如果文件缺失或损坏，PostgreSQL 已完成任务仍会列在历史列表，打开时用已保存的 checkpoint 补建并显示相同的历史详情，不重跑研究。`APEXLOGIC_HISTORY_DIR` 若设置，相对路径按项目根目录解析，UI 和 Worker 使用同一个目录。
 
-本轮采用单 Worker 闭环。若 Redis 不可用，已启动的 Worker 会继续扫描 PostgreSQL；新 Worker 仍需连接队列实例后启动。待办：容量限制、全局限流、调度公平性与系统压测。
+可启动多个 `worker.py` 进程。PostgreSQL 会话锁控制同时执行的研究任务和各搜索源的在途调用；Worker 强杀后连接关闭即释放名额。逐来源的分钟请求额度记录在 PostgreSQL，强杀后仍保留窗口内的已发请求，避免恢复时突发超额。队列满时 UI 明确提示，取消排队任务可腾出名额；符合领取条件的任务按创建时间排队，UI 显示查询时的等待队列位置。所有 Worker 应使用相同的全局上限配置。若 Redis 不可用，已启动的 Worker 会继续扫描 PostgreSQL；新 Worker 仍需连接队列实例后启动。跨进程公平性是任务领取顺序，不保证外部请求排队公平。
 
 ## CLI 与导出
 

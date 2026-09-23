@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import lru_cache, wraps
+from threading import Lock
 import hashlib
 import inspect
 import json
@@ -22,14 +23,16 @@ def sensitive(text):
 def count(name, amount=1):
     scope = _SCOPE.get()
     if scope is not None:
-        scope["stats"][name] = scope["stats"].get(name, 0) + amount
+        with scope["lock"]:
+            scope["stats"][name] = scope["stats"].get(name, 0) + amount
 
 
 @contextmanager
 def cache_scope(state):
     scope = {"namespace": state.get("run_config", {}).get("memory", {}).get("namespace", os.getenv("MEMORY_NAMESPACE", "workspace/default")),
              "fresh": sensitive(state.get("topic", "")) or sensitive(state.get("critique_feedback", "")),
-             "stats": {}}
+             "postgres": state.get("run_config", {}).get("storage", {}).get("backend") == "postgres",
+             "stats": {}, "lock": Lock()}
     token = _SCOPE.set(scope)
     try:
         yield scope["stats"]
@@ -131,12 +134,35 @@ def cached_search(provider):
             metric = "search."
 
             def invoke():
-                count(metric + "external_calls")
-                start = time.monotonic()
-                try:
-                    return fn(*args, **kwargs)
-                finally:
-                    count(metric + "external_seconds", round(time.monotonic() - start, 4))
+                # A cache hit never occupies a provider permit. All PostgreSQL
+                # Workers share the same session-lock capacity for each source.
+                from contextlib import nullcontext
+                from core.service_limits import capacity, global_slot, rate_ticket
+                limits = {"duckduckgo": ("DDG", 4), "arxiv": ("ARXIV", 2),
+                          "tavily": ("TAVILY", 2)}
+                minute_defaults = {"duckduckgo": 60, "arxiv": 20, "tavily": 60}
+                provider_name = provider.split(":", 1)[0]
+                code, default = limits.get(provider_name, (provider_name.upper(), 2))
+                wait = capacity("APEXLOGIC_PROVIDER_WAIT_SECONDS", 30, maximum=300)
+                guard = (global_slot("provider:" + provider_name,
+                         capacity("APEXLOGIC_GLOBAL_" + code + "_MAX_INFLIGHT", default),
+                         wait_seconds=wait)
+                         if scope and scope["postgres"] else nullcontext(True))
+                with guard:
+                    if scope and scope["postgres"]:
+                        waited = rate_ticket(
+                            provider_name,
+                            capacity("APEXLOGIC_GLOBAL_" + code + "_PER_MINUTE",
+                                     minute_defaults.get(provider_name, 60), maximum=100000),
+                            wait_seconds=wait,
+                        )
+                        count(metric + "rate_wait_seconds", round(waited, 4))
+                    count(metric + "external_calls")
+                    start = time.monotonic()
+                    try:
+                        return fn(*args, **kwargs)
+                    finally:
+                        count(metric + "external_seconds", round(time.monotonic() - start, 4))
 
             if cache is None:
                 count(metric + ("fresh_bypass" if fresh else "disabled_bypass"))

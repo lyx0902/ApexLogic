@@ -683,10 +683,14 @@ with st.sidebar:
                 st.session_state.history_data = data
                 st.rerun()
 
-    if st.session_state.view_history:
+    showing_task = (inspect_run_id is not None or
+                    (selected_storage == "postgres" and
+                     any(item["run_id"] == st.session_state.get("active_run_id") for item in run_list)))
+    if st.session_state.view_history or showing_task:
         if st.button("← 返回新研究", use_container_width=True):
             st.session_state.view_history = False
             st.session_state.history_data = None
+            st.session_state.active_run_id = None
             st.rerun()
 
     st.markdown("---")
@@ -728,6 +732,8 @@ if inspect_run_id and not start_btn and not resume_run_id:
             job = scheduler.status(inspect_run_id)
             if job:
                 st.write("后台调度：", job["status"] + ("（等待节点边界取消）" if job["cancel_requested"] else ""))
+                if job.get("queue_position"):
+                    st.write("等待队列位置：", job["queue_position"])
                 st.write("最近完成节点：", job["last_node"] or "尚未完成节点")
                 st.write("调度更新时间：", job["updated_at"])
                 if job.get("last_error"):
@@ -795,7 +801,11 @@ if selected_storage == "postgres" and (start_btn or resume_run_id):
         st.session_state.active_run_id = run_id
         st.rerun()
     except Exception as exc:
-        st.error(f"提交后台任务失败（{type(exc).__name__}）。请检查 PostgreSQL 迁移和 Worker 配置。")
+        from core.service_limits import QueueFullError
+        if isinstance(exc, QueueFullError):
+            st.warning("后台等待队列已满，请稍后再提交或取消不需要的排队任务。")
+        else:
+            st.error(f"提交后台任务失败（{type(exc).__name__}）。请检查 PostgreSQL 迁移和 Worker 配置。")
     st.stop()
 
 
