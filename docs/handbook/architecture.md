@@ -4,13 +4,18 @@
 
 ## 职责与边界
 
-本文解释模块连接与状态归属，不展开搜索算法、数据库安装或恢复步骤。ApexLogic 的生产入口是 ResearchRunner，研究流程是三个 LangGraph 节点组成的循环图；记忆发布在图完成后执行，不是第四个研究节点。
+本文解释模块连接与状态归属，不展开搜索算法、数据库安装或恢复步骤。研究执行入口是 ResearchRunner；PostgreSQL 模式下由后台 Worker 调用，SQLite 页面和 CLI 可直接调用。研究流程是三个 LangGraph 节点组成的循环图；记忆发布在图完成后执行，不是第四个研究节点。
 
 ## 模块依赖
 
 ```mermaid
 flowchart TD
-    Entry["Streamlit / CLI"] --> Runner["ResearchRunner"]
+    UI["Streamlit PostgreSQL"] --> Scheduler["调度记录 / Outbox"]
+    Scheduler --> Worker["后台 Worker"]
+    Worker --> Runner["ResearchRunner"]
+    Scheduler --> Queue["独立 Redis Streams 通知"]
+    Queue --> Worker
+    Direct["SQLite UI / CLI"] --> Runner
     Runner --> Graph["LangGraph：Researcher → Writer → Reviewer"]
     Runner --> Storage["持久化工厂：任务仓库 / 锁 / Checkpointer"]
     Graph --> Retrieval["检索编排"]
@@ -25,7 +30,7 @@ flowchart TD
     Memory --> Storage
 ```
 
-Redis 只加速指定请求；未启用 Redis 时研究和持久化仍能工作。PostgreSQL 也不是启用记忆优先的必要条件，SQLite 支持相同业务策略。
+图中的缓存 Redis 只加速指定请求，可关闭；独立的队列 Redis 用于后台 Worker 通知，Worker 启动时需要它。PostgreSQL 保存权威调度状态，运行中的 Worker 在队列 Redis 暂时不可用时仍可扫描数据库。PostgreSQL 不是启用记忆优先的必要条件，SQLite 支持相同业务策略。
 
 ## 数据契约
 
@@ -46,18 +51,18 @@ memory_publication 和发布尝试历史由 Runner 在图外查询或发布后�
 
 ## 一次任务的数据流
 
-1. UI / CLI 请求 Runner 创建任务，生成身份、配置快照与配置哈希。
-2. Runner 获得任务锁，选择对应后端的 Checkpointer，开始或恢复图。
+1. SQLite UI / CLI 请求 Runner 创建任务；PostgreSQL UI 通过调度器在同一事务创建任务和 outbox。两者均生成身份、配置快照与配置哈希。
+2. PostgreSQL Worker 领取租约并调用 Runner；Runner 获得任务锁，选择对应后端的 Checkpointer，开始或恢复图。
 3. Researcher 输出证据与检索审计；Writer 输出草稿；Reviewer 输出评分、标签和下一跳。
 4. 已完成节点由 Checkpointer 持久化；任务仓库记录运行状态和执行尝试。
 5. 图结束后，Runner 标记任务完成，再尝试记忆发布。
-6. UI 展示返回状态并保存页面历史，导出模块生成 Markdown 文件。
+6. 直接执行的 UI 与后台 Worker 使用相同格式写入 appstats 历史快照；完成任务的 UI 可从 checkpoint 重建缺失的快照。报告导出模块单独生成 Markdown 文件。
 
 ## 重要边界
 
 - 多 Agent 是职责分工与图路由，不代表当前单任务检索已实现异步 DAG 或分布式调度。
 - “任务完成”“评审接受”“记忆发布完成”“报告导出成功”是不同结果。
-- checkpoint 是恢复依据，appstats JSON 是展示快照，Redis 是缓存，不能互相替代。
+- checkpoint 是恢复依据，appstats JSON 是可重建的展示快照；缓存 Redis 与独立队列 Redis 也不能替代 PostgreSQL 状态。
 - memory namespace 是逻辑隔离字段，不能据此宣称已实现用户认证或多租户授权。
 - 恢复后允许重跑未提交节点，不承诺外部 API 调用恰好一次。
 

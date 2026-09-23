@@ -1,0 +1,22 @@
+services:
+  queue:
+    image: redis:8@sha256:8a1efc5f479551822b47424ccae982026b633f28818eab0387348120a61e10e2
+    environment:
+      REDIS_PASSWORD: ${APEXLOGIC_QUEUE_REDIS_PASSWORD:?Set APEXLOGIC_QUEUE_REDIS_PASSWORD first}
+      REDISCLI_AUTH: ${APEXLOGIC_QUEUE_REDIS_PASSWORD:?Set APEXLOGIC_QUEUE_REDIS_PASSWORD first}
+    ports:
+      - "127.0.0.1:${APEXLOGIC_QUEUE_REDIS_PORT:-6380}:6379"
+    command:
+      - /bin/sh
+      - -c
+      - 'exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --appendfsync everysec --maxmemory-policy noeviction'
+    volumes:
+      - apexlogic_queue:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+    restart: unless-stopped
+volumes:
+  apexlogic_queue:

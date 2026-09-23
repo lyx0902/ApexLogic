@@ -22,6 +22,7 @@
 | 记忆优先检索 | 逐子问题检查历史证据覆盖，只对满足复用条件的问题省去预计划搜索，保留缺口补搜 |
 | 搜索与向量缓存 | 可选 Redis 精确缓存，配合 TTL、命名空间隔离、并发请求合并和故障旁路 |
 | 全流程可观测 | Streamlit 展示逐题搜索资料、引用入选、评审路由、缓存统计及记忆发布尝试历史 |
+| PostgreSQL 后台研究 | UI 提交任务，独立 Worker 执行；PostgreSQL outbox 与租约支持补发及失联恢复 |
 
 适合需要跨多个来源建立结论、保留研究依据，以及持续复用已有资料的技术调研与多跳问答任务。
 
@@ -110,7 +111,7 @@ SQLite 是默认后端；PostgreSQL 与 Redis 分别按需启用，二者不强�
 
 ### 执行观察与记忆发布诊断
 
-Streamlit 按节点更新执行结果，支持查看研究计划、逐题资料、IRCoT 补搜、报告草稿、四维评分与路由决策。完成页提供 Markdown 下载、可点击引用、缓存调用统计和记忆召回 / 入选 / 引用 / 发布情况；历史页面复用相同展示逻辑。
+SQLite 页面按节点更新执行结果；PostgreSQL 后台模式通过查询 checkpoint 和调度记录查看最近节点、草稿及完成报告。Worker 完成后也生成相同格式的历史快照；文件缺失时可从 checkpoint 补建，不重跑研究。历史页面展示阶段详情、引用与统计，并可下载 Markdown 报告。
 
 记忆发布独立于报告生成：发布失败不会抹掉已完成报告。重新打开已完成任务时，可补齐尚未生成的记忆向量，无需重新研究。
 
@@ -170,6 +171,8 @@ python main.py --topic "比较关系型数据库与向量数据库在智能体�
 ```
 
 Web UI 可设置研究主题、迭代上限、通过阈值和任务存储后端，也可查看已有任务并继续执行。
+
+PostgreSQL 模式的 UI 会提交后台任务；需先运行独立 Worker。部署和取消边界见[使用与配置](docs/handbook/operations.md)。SQLite 旧任务仍由页面直接执行。
 
 ## 数据库与缓存部署
 
@@ -340,11 +343,13 @@ ApexLogic/
 ├── docs/                   # 模块设计与验收说明
 ├── app.py                  # Streamlit Web UI
 ├── main.py                 # 持久化研究 CLI
+├── worker.py               # PostgreSQL 后台研究 Worker
 ├── export_report.py        # 报告导出
 ├── eval_runner.py          # ApexLogic 批量评测
 ├── eval_baselines.py       # 商业模型基线
 ├── compose.postgres.yml    # PostgreSQL + pgvector
-└── compose.redis.yml       # Redis 缓存
+├── compose.redis.yml       # Redis 缓存
+└── compose.queue.yml       # 独立 Redis Streams 队列
 ```
 
 ## 模块文档

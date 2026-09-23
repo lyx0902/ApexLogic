@@ -19,7 +19,7 @@ class PostgresRunRepository:
         record["run_config"] = json.loads(record.pop("config_json"))
         return record
 
-    def create(self, topic: str, config: dict):
+    def create(self, topic: str, config: dict, *, enqueue=False):
         if not topic.strip():
             raise ValueError("研究主题不能为空")
         run_id = uuid4().hex
@@ -30,6 +30,10 @@ class PostgresRunRepository:
                 VALUES (%s,%s,%s,'created',%s,%s,%s,%s,%s,%s)""",
                 (run_id, run_id, topic.strip(), now, now, json.dumps(config, ensure_ascii=False),
                  config_hash(config), SCHEMA_VERSION, WORKFLOW_VERSION))
+            if enqueue:
+                db.execute("INSERT INTO research_jobs(run_id,status,updated_at) VALUES (%s,'queued',now())",
+                           (run_id,))
+                db.execute("INSERT INTO research_outbox(run_id,created_at) VALUES (%s,now())", (run_id,))
         return self.get(run_id)
 
     def get(self, run_id):

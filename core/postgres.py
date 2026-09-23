@@ -149,5 +149,13 @@ def initialize():
             if log_version is None:
                 conn.execute(SCHEMA)
                 conn.execute("INSERT INTO schema_migrations VALUES (2,%s)", (log_checksum,))
+            queue_sql = (Path(__file__).parent.parent / "migrations/postgres/003_background.sql").read_text(encoding="utf-8")
+            queue_checksum = hashlib.sha256(queue_sql.encode()).hexdigest()
+            queue_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=3").fetchone()
+            if queue_version and queue_version["checksum"] != queue_checksum:
+                raise RuntimeError("Background scheduler migration checksum differs")
+            if queue_version is None:
+                conn.execute(queue_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (3,%s)", (queue_checksum,))
         conn.execute("SET search_path TO apexlogic_checkpoints,public")
         PostgresSaver(conn).setup()

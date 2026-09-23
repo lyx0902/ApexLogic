@@ -16,6 +16,7 @@
 | stream | 创建执行尝试，逐节点产生 RunEvent | 任务、尝试、checkpoint；完成后可能发布记忆 |
 | run | 完整消费 stream，返回最终状态 | 同 stream |
 | inspect | 获取状态并在可获锁时校正过期运行记录 | 可能更新任务 / 尝试；不触发记忆发布 |
+| peek | 只读获取当前任务快照与尝试；首节点未保存前返回空状态 | 无 |
 | history | 读取 checkpoint 历史，按 execution_trace 长度去重 | 不执行研究节点 |
 | completed_state | 经 inspect 检查后返回已完成状态 | 可能校正元数据；不重新研究或发布 |
 
@@ -60,6 +61,18 @@ SQLite 使用进程间文件锁；PostgreSQL 使用会话 advisory lock，执行
 运行耗时使用 monotonic 计时并在尝试结束时持久化。强杀未保存的耗时不会补估为精确值。记忆发布在研究尝试结束之后进行，因此研究耗时不等于包含发布在内的页面总等待时间。
 
 研究配置和 research_as_of 在创建时冻结；密钥、数据库连接及部分基础设施配置仍从当前环境读取。详细分类见[使用与配置](operations.md)。
+
+## PostgreSQL 后台单 Worker
+
+Streamlit 的 PostgreSQL 路径现在只提交和查询任务。`BackgroundScheduler.submit` 在同一事务写入 `runs`、`research_jobs` 和 `research_outbox`；Worker 将 outbox 通知投到独立 Redis Stream，消费者组收到后领取 PostgreSQL 租约。Redis 消息仅用于唤醒，周期扫描 PostgreSQL 会补偿丢失的通知和过期租约。重复通知必须再次竞争领取，研究图仍由原有 PostgreSQL advisory lock 排他执行。
+
+Worker 通过 `ResearchRunner.stream` 执行，保留原配置快照与 checkpoint 校验。每完成一个节点更新 `last_node`；心跳续租。短暂的心跳数据库错误会记录异常类型并重试；若租约已被其他执行者领取，原 Worker 在节点返回边界停止继续推进。取消请求写入调度记录，Worker 在节点返回后检查并停止，不会中断正在执行的同步模型或搜索调用。外部调用在未提交节点崩溃后仍可能重复。
+
+研究完成后，Worker 从最终状态和 checkpoint 历史生成与普通 Streamlit 任务相同的 appstats 展示快照。快照生成失败只记录 `HistoryExport:*` 诊断，研究仍保持完成；再次打开该任务时可从 checkpoint 补建，无需重新调用研究节点。
+
+调度状态 `queued/running/completed/cancelled` 与研究状态 `created/running/interrupted/completed` 分开。Worker 失联后租约到期可接管；实际恢复位置以 checkpoint 为准。当前仅提供一个 Worker 的运行和验证口径，多 Worker 公平排队与全局限流尚未实现。CLI `main.py` 仍支持旧任务直接执行；不要对同一个后台任务同时使用 CLI 恢复。
+
+启动及验证步骤见[使用与配置](operations.md)。
 
 ## 验证
 

@@ -36,13 +36,17 @@ class ResearchRunner:
     def _checkpointer(self):
         return storage_factory.checkpointer(self.data_dir, self.storage)
 
-    def create(self, topic, *, max_revisions=None, pass_threshold=None, output_mode="debug"):
+    def _new_config(self, *, max_revisions=None, pass_threshold=None, output_mode="debug"):
         config = make_run_config(max_revisions=max_revisions, pass_threshold=pass_threshold, output_mode=output_mode)
         config["memory"]["data_dir"] = str(self.data_dir)
         config["storage"] = dict(self.storage)
         if self.storage["backend"] == "postgres":
             config["memory"]["data_dir"] = ""
-        return self.repository.create(topic, config)
+        return config
+
+    def create(self, topic, *, max_revisions=None, pass_threshold=None, output_mode="debug"):
+        return self.repository.create(topic, self._new_config(
+            max_revisions=max_revisions, pass_threshold=pass_threshold, output_mode=output_mode))
 
     def _record(self, run_id):
         record = self.repository.get(run_id)
@@ -137,6 +141,19 @@ class ResearchRunner:
             running = True
         return {"record": self.repository.get(run_id), "running": running,
                 "state": self._memory_result(record, snapshot) if snapshot else {},
+                "next": list(snapshot.next) if snapshot else [],
+                "saved_at": snapshot.created_at if snapshot else None,
+                "attempts": self.repository.attempts(run_id)}
+
+    def peek(self, run_id):
+        """Read a live task without acquiring its execution lock or reconciling metadata."""
+        record = self._record(run_id)
+        with self._checkpointer() as saver:
+            graph = self._graph(record, saver)
+            config = self._invocation_config(record)
+            # An active first node can have an attempt but no checkpoint yet.
+            snapshot = self._snapshot(record, graph, saver) if saver.get_tuple(config) else None
+        return {"record": record, "state": self._memory_result(record, snapshot) if snapshot else {},
                 "next": list(snapshot.next) if snapshot else [],
                 "saved_at": snapshot.created_at if snapshot else None,
                 "attempts": self.repository.attempts(run_id)}

@@ -49,6 +49,15 @@ python -m pytest -q tests/test_postgres_integration.py
 python -m pytest -q tests/test_redis_integration.py
 ```
 
+后台 Worker 集成测试会向真实 PostgreSQL 队列提交模拟任务。先停止普通 Worker 和 Streamlit，再单独设置 `APEXLOGIC_TEST_BACKGROUND_EXCLUSIVE=1` 运行 `tests/test_background.py`；活动 Worker 会抢先领取测试任务，因此不能在共享队列上并行测试。进程强杀用例会启动两个临时 Worker 子进程，在第二个模拟节点执行中终止第一个进程，等租约过期后验证同一任务从 checkpoint 接管、只重跑未提交节点，并生成历史 JSON。测试还覆盖 Redis 在 Worker 启动后失联时的 PostgreSQL 扫描补偿、心跳重试及租约转移后的节点边界停止。进程用例发现其他排队或运行中任务时会跳过，以免扫描执行真实研究任务；测试创建的任务、checkpoint 和消息会清理。模拟节点不调用搜索或 LLM API。
+
+```powershell
+$env:APEXLOGIC_TEST_BACKGROUND_EXCLUSIVE = '1'
+.\.venv\Scripts\python.exe -m pytest -q tests/test_background.py
+```
+
+历史快照的离线投影和排序测试为 `tests/test_history.py`。这些测试不等于真实供应商端到端稳定性验证，也不覆盖多 Worker 公平调度。
+
 执行前安装对应可选依赖。PostgreSQL 初始迁移 SQL 必须随源码可用。
 
 ## 端到端恢复验收

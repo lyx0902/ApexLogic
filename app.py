@@ -10,17 +10,16 @@ from itertools import chain
 from dotenv import load_dotenv
 load_dotenv()  # 必须在任何读取 os.getenv 的模块导入前执行
 
-import json
 import os
 import re
 import traceback
 from datetime import datetime
-from pathlib import Path
-from uuid import uuid4
 
 import streamlit as st
 
 from export_report import _inject_citation_hyperlinks
+from core.history import (load_history_list, load_or_rebuild_run,
+                          merge_completed_runs, save_run_to_history, snapshot_for_event)
 from core.runner import ResearchRunner
 
 # ── Page config ────────────────────────────────────────────────────────────────
@@ -71,9 +70,6 @@ code {
 """,
     unsafe_allow_html=True,
 )
-
-# ── 常量 ───────────────────────────────────────────────────────────────────────
-APPSTATS_DIR = Path(os.getenv("APEXLOGIC_HISTORY_DIR") or Path(__file__).resolve().parent / "appstats")
 
 # ── 通用辅助函数 ───────────────────────────────────────────────────────────────
 
@@ -173,133 +169,6 @@ def render_references(contexts: list) -> None:
 
 # ── 历史记录辅助函数 ────────────────────────────────────────────────────────────
 
-def save_run_to_history(
-    topic: str,
-    max_revisions: int,
-    pass_threshold: float,
-    final_state: dict,
-    elapsed_seconds: float,
-    iteration_snapshots: list | None = None,
-    completed_at: str | None = None,
-) -> None:
-    """将本次研究结果序列化到 appstats/ 目录中。"""
-    APPSTATS_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now()
-    safe_topic = re.sub(r"[^\w\u4e00-\u9fff]", "_", topic)[:20]
-    run_id = final_state.get("run_id")
-    filename = APPSTATS_DIR / (f"run_{run_id}.json" if run_id else f"run_{ts.strftime('%Y%m%d_%H%M%S')}_{safe_topic}.json")
-
-    # Reopening a completed task must not change its historical completion time.
-    if filename.exists():
-        previous = json.loads(filename.read_text(encoding="utf-8"))
-        timestamp = previous.get("timestamp") or completed_at or ts.isoformat()
-    else:
-        timestamp = completed_at or ts.isoformat()
-    review_result = final_state.get("review_result", {})
-    contexts = final_state.get("retrieved_context", [])[:10]
-
-    record = {
-        "run_id": run_id,
-        "timestamp": timestamp,
-        "completed_at": completed_at,
-        "topic": topic,
-        "max_revisions": max_revisions,
-        "pass_threshold": pass_threshold,
-        "iterations_done": final_state.get("revision_step", 0),
-        "is_satisfactory": bool(final_state.get("is_satisfactory", False)),
-        "answer_status": final_state.get("answer_status", "unknown"),
-        "research_as_of": final_state.get("run_config", {}).get("research_as_of"),
-        "weighted_score": float(review_result.get("weighted_score", 0.0)),
-        "elapsed_seconds": round(elapsed_seconds, 1),
-        "final_report": final_state.get("final_report") or final_state.get("draft", ""),
-        "references": [
-            {
-                "citation_id": ctx.get("citation_id", "") if isinstance(ctx, dict) else "",
-                "title": ctx.get("title", "") if isinstance(ctx, dict) else str(ctx),
-                "url": (
-                    str(ctx.get("url", "") or "").strip()
-                    if isinstance(ctx, dict)
-                    else ""
-                ),
-                "score": ctx.get("bge_reranker_score") if isinstance(ctx, dict) else None,
-                "summary": (ctx.get("core_summary", "")[:200] if isinstance(ctx, dict) else ""),
-            }
-            for ctx in contexts
-        ],
-        "reasoning_references": [
-            {
-                "citation_id": ctx.get("citation_id", "") if isinstance(ctx, dict) else "",
-                "title": ctx.get("title", "") if isinstance(ctx, dict) else str(ctx),
-                "url": (
-                    str(ctx.get("url", "") or "").strip()
-                    if isinstance(ctx, dict)
-                    else ""
-                ),
-                "summary": (
-                    (ctx.get("core_summary", "") or ctx.get("content", ""))[:200]
-                    if isinstance(ctx, dict)
-                    else ""
-                ),
-            }
-            for ctx in final_state.get("reasoning_contexts", [])[:15]
-        ],
-        "errors_count": len(final_state.get("errors", [])),
-        "errors": final_state.get("errors", [])[:10],
-        "run_metadata": {
-            "iteration_snapshots": iteration_snapshots or [],
-            "memory_stats": final_state.get("memory_stats", {}),
-            "cache_stats": final_state.get("cache_stats", {}),
-            "memory_first": final_state.get("memory_first", {}),
-            "planned_search_queries": final_state.get("planned_search_queries", []),
-            "search_queries": final_state.get("search_queries", []),
-            "memory_used_ids": final_state.get("memory_used_ids", []),
-            "memory_publication": final_state.get("memory_publication", {}),
-            "memory_publication_attempts": final_state.get("memory_publication_attempts", []),
-            "memory_publication_log_error": final_state.get("memory_publication_log_error"),
-            # 推理链数据
-            "reasoning_enabled": final_state.get("reasoning_enabled", False),
-            "reasoning_chains": final_state.get("reasoning_chains", []),
-            "reasoning_contexts": [
-                {
-                    "title": ctx.get("title", "") if isinstance(ctx, dict) else str(ctx),
-                    "url": (
-                        str(ctx.get("url", "") or "").strip()
-                        if isinstance(ctx, dict)
-                        else ""
-                    ),
-                    "summary": (
-                        (ctx.get("core_summary", "") or ctx.get("content", ""))[:200]
-                        if isinstance(ctx, dict)
-                        else ""
-                    ),
-                }
-                for ctx in final_state.get("reasoning_contexts", [])[:15]
-            ],
-        },
-    }
-
-    temp_path = filename.with_suffix(f".{uuid4().hex}.tmp")
-    with open(temp_path, "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=2)
-    temp_path.replace(filename)
-
-
-def load_history_list() -> list[dict]:
-    """加载 appstats/ 中最近 20 条历史记录（倒序）。"""
-    if not APPSTATS_DIR.exists():
-        return []
-    files = sorted(APPSTATS_DIR.glob("run_*.json"), reverse=True)[:20]
-    records: list[dict] = []
-    for f in files:
-        try:
-            with open(f, encoding="utf-8") as fh:
-                data = json.load(fh)
-            records.append({"file": str(f), "data": data})
-        except Exception:
-            pass
-    return records
-
-
 def _history_label(record: dict) -> str:
     """生成历史记录的侧边栏展示标签。"""
     data = record["data"]
@@ -308,9 +177,10 @@ def _history_label(record: dict) -> str:
     except Exception:
         ts = "??-??"
     topic_short = data["topic"][:14] + ("…" if len(data["topic"]) > 14 else "")
-    score = data.get("weighted_score", 0.0)
+    score = data.get("weighted_score")
+    score_text = f"{score:.2f}分" if isinstance(score, (int, float)) else "待打开"
     ok = "✅" if data.get("is_satisfactory") else ("⚠️ 有限结论" if data.get("answer_status") == "limited" else "❌")
-    return f"{ts} · {topic_short} · {score:.2f}分 {ok}"
+    return f"{ts} · {topic_short} · {score_text} {ok}"
 
 
 def render_publication_attempts(state):
@@ -737,8 +607,6 @@ if "view_history" not in st.session_state:
 if "history_data" not in st.session_state:
     st.session_state.history_data = None
 
-# 提前加载历史列表（侧边栏和欢迎页均需要）
-history_list = load_history_list()
 storage_choices = ["sqlite", "postgres"]
 storage_default = os.getenv("APEXLOGIC_STORAGE_BACKEND", "sqlite")
 selected_storage = st.sidebar.selectbox("任务存储", storage_choices,
@@ -750,6 +618,9 @@ try:
 except Exception as exc:
     st.error(f"无法打开任务存储（{type(exc).__name__}）。PostgreSQL 请先按 docs/postgres-migration.md 配置并初始化；SQLite 旧任务可切换后端查看。")
     st.stop()
+history_list = load_history_list()
+if selected_storage == "postgres":
+    history_list = merge_completed_runs(history_list, run_list)
 resume_run_id = None
 inspect_run_id = None
 
@@ -792,15 +663,24 @@ with st.sidebar:
     if history_list:
         st.markdown("---")
         st.markdown("**📚 历史记录**")
-        options = ["— 选择历史记录 —"] + [_history_label(r) for r in history_list]
-        selected_label = st.selectbox(
-            "历史记录列表", options, label_visibility="collapsed"
-        )
-        if selected_label != "— 选择历史记录 —":
-            real_idx = options.index(selected_label) - 1
+        history_choices = {
+            f"{_history_label(entry)} · {index + 1}": entry
+            for index, entry in enumerate(history_list)
+        }
+        selected_history = st.selectbox("历史记录列表", [None] + list(history_choices),
+            format_func=lambda choice: "— 选择历史记录 —" if choice is None else choice,
+            label_visibility="collapsed")
+        if selected_history is not None:
             if st.button("📖 查看此次记录", use_container_width=True):
+                entry = history_choices[selected_history]
+                try:
+                    data = (load_or_rebuild_run(runner, entry["data"]["run_id"])
+                            if entry["file"] is None else entry["data"])
+                except Exception as exc:
+                    st.error(f"无法从 checkpoint 重建历史记录（{type(exc).__name__}）。")
+                    st.stop()
                 st.session_state.view_history = True
-                st.session_state.history_data = history_list[real_idx]["data"]
+                st.session_state.history_data = data
                 st.rerun()
 
     if st.session_state.view_history:
@@ -817,6 +697,12 @@ with st.sidebar:
         "运行命令：`streamlit run app.py`"
     )
 
+if (selected_storage == "postgres" and not (start_btn or resume_run_id or inspect_run_id)
+        and not st.session_state.view_history):
+    active = st.session_state.get("active_run_id")
+    if active and any(item["run_id"] == active for item in run_list):
+        inspect_run_id = active
+
 
 # ── Main Header ────────────────────────────────────────────────────────────────
 st.markdown("# 🔬 ApexLogic 多智能体深度研究引擎")
@@ -831,11 +717,31 @@ st.markdown("---")
 # ── 历史记录浏览模式（优先于新研究，但 start_btn 可覆盖）────────────────────────
 if inspect_run_id and not start_btn and not resume_run_id:
     try:
-        info = runner.inspect(inspect_run_id)
+        info = runner.peek(inspect_run_id) if selected_storage == "postgres" else runner.inspect(inspect_run_id)
         item = info["record"]
         st.subheader(item["topic"])
         st.code(item["run_id"])
-        st.write("状态：", "正在执行" if info["running"] else item["status"])
+        if selected_storage == "postgres":
+            from core.background import BackgroundScheduler
+            scheduler = BackgroundScheduler(runner)
+            st.session_state.active_run_id = inspect_run_id
+            job = scheduler.status(inspect_run_id)
+            if job:
+                st.write("后台调度：", job["status"] + ("（等待节点边界取消）" if job["cancel_requested"] else ""))
+                st.write("最近完成节点：", job["last_node"] or "尚未完成节点")
+                st.write("调度更新时间：", job["updated_at"])
+                if job.get("last_error"):
+                    if job["last_error"].startswith("HistoryExport:"):
+                        st.warning("历史快照导出失败；打开已完成任务时将从 checkpoint 补建，不会重新研究。")
+                    else:
+                        st.warning(f"Worker 上次尝试：{job['last_error']}，将自动重试。")
+                if job["status"] in {"queued", "running"} and not job["cancel_requested"]:
+                    if st.button("取消后台研究"):
+                        scheduler.cancel(inspect_run_id)
+                        st.rerun()
+            if st.button("刷新后台进度"):
+                st.rerun()
+        st.write("研究状态：", item["status"])
         st.write("待执行节点：", info["next"] or "无")
         st.write("最近保存：", info["saved_at"] or "尚未开始")
         st.write("完成时间：", info["record"].get("completed_at") or "尚未完成")
@@ -846,10 +752,22 @@ if inspect_run_id and not start_btn and not resume_run_id:
         if item.get("termination_reason") == "max_revisions":
             st.warning("研究已结束，但未达到评审通过条件。")
         saved = info["state"]
+        if selected_storage == "postgres" and item["status"] == "completed":
+            try:
+                historical_view = load_or_rebuild_run(runner, inspect_run_id)
+            except Exception as exc:
+                st.warning(f"历史详情暂时无法重建（{type(exc).__name__}），以下展示已保存报告。")
+            else:
+                show_history_view(historical_view)
+                st.stop()
         render_publication_attempts(saved)
         if saved.get("draft"):
-            st.markdown(_inject_citation_hyperlinks(saved.get("final_report") or saved["draft"],
+            report_text = saved.get("final_report") or saved["draft"]
+            st.markdown(_inject_citation_hyperlinks(report_text,
                 saved.get("retrieved_context", []), saved.get("reasoning_contexts", [])))
+            if item["status"] == "completed":
+                st.download_button("下载 Markdown 报告", report_text,
+                                   file_name=f"apexlogic_{inspect_run_id}.md", mime="text/markdown")
         with st.expander("执行尝试与已保存轨迹"):
             st.json({"attempts": info["attempts"], "trace": saved.get("execution_trace", [])})
     except Exception as exc:
@@ -861,6 +779,23 @@ if st.session_state.view_history and not start_btn and not resume_run_id:
         show_history_view(st.session_state.history_data)
     else:
         st.warning("历史记录数据丢失，请重新选择。")
+    st.stop()
+
+if selected_storage == "postgres" and (start_btn or resume_run_id):
+    try:
+        from core.background import BackgroundScheduler
+        scheduler = BackgroundScheduler(runner)
+        if resume_run_id and not start_btn:
+            run_id = resume_run_id
+            scheduler.enqueue(run_id)
+        else:
+            record = scheduler.submit(topic, max_revisions=max_revisions,
+                                      pass_threshold=pass_threshold, output_mode="user")
+            run_id = record["run_id"]
+        st.session_state.active_run_id = run_id
+        st.rerun()
+    except Exception as exc:
+        st.error(f"提交后台任务失败（{type(exc).__name__}）。请检查 PostgreSQL 迁移和 Worker 配置。")
     st.stop()
 
 
@@ -1103,17 +1038,7 @@ try:
                                             st.markdown("---")
 
                 # 采集 Researcher 阶段快照（与直播展示字段完全一致）
-                iteration_snapshots.append({
-                    "node": "researcher",
-                    "iteration": current_iteration,
-                    "search_queries": full_state.get("search_queries", []),
-                    "mab_state": full_state.get("mab_state", {}),
-                    "source_quality_summary": full_state.get("source_quality_summary", {}),
-                    "query_plan": full_state.get("query_plan", {}),
-                    "iterative_retrieval_summary": full_state.get("iterative_retrieval_summary", {}),
-                    "reasoning_chains": full_state.get("reasoning_chains", []),
-                    "retrieved_context_count": len(full_state.get("retrieved_context", [])),
-                })
+                iteration_snapshots.append(snapshot_for_event(event))
 
             # ── Writer ────────────────────────────────────────────────────────
             elif node == "writer":
@@ -1145,11 +1070,7 @@ try:
                         st.warning("草稿内容为空，可能发生了异常。")
 
                 # 采集 Writer 阶段快照（保存完整 draft，渲染时再 extract_think）
-                iteration_snapshots.append({
-                    "node": "writer",
-                    "iteration": current_iteration,
-                    "draft": full_state.get("draft", ""),
-                })
+                iteration_snapshots.append(snapshot_for_event(event))
 
             # ── Reviewer ──────────────────────────────────────────────────────
             elif node == "reviewer":
@@ -1227,16 +1148,7 @@ try:
                     st.info(f"**路由决策：** {route_labels.get(route, route or '未知')}")
 
                 # 采集 Reviewer 阶段快照
-                iteration_snapshots.append({
-                    "node": "reviewer",
-                    "iteration": current_iteration,
-                    "review_result": full_state.get("review_result", {}),
-                    "critique_feedback": full_state.get("critique_feedback", ""),
-                    "revision_directives": full_state.get("revision_directives", {}),
-                    "next_route": full_state.get("next_route", ""),
-                    "is_satisfactory": bool(full_state.get("is_satisfactory", False)),
-                    "answer_status": full_state.get("answer_status", "unknown"),
-                })
+                iteration_snapshots.append(snapshot_for_event(event))
 
     if final_state.get("is_satisfactory"):
         status_placeholder.success("✅ 研究完成，报告已通过评审。")

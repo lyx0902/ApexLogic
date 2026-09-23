@@ -27,6 +27,8 @@ tests/*
 !tests/test_redis_integration.py
 !tests/test_retrieval_cleanup.py
 !tests/test_memory_first.py
+!tests/test_background.py
+!tests/test_history.py
 !docs/
 docs/*
 !docs/redis-cache.md
@@ -34,3 +36,9 @@ docs/*
 !docs/retrieval-planning-audit.md
 !docs/memory-publication-diagnostics.md
 migrations/
+!migrations/
+migrations/*
+!migrations/postgres/
+migrations/postgres/*
+!migrations/postgres/001_initial.sql
+!migrations/postgres/003_background.sql

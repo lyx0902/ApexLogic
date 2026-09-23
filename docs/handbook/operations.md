@@ -49,6 +49,23 @@ MAX_REVISIONS 的示例值为 4，未配置回退 3；GRAPH_EXPAND_QUERIES 示�
 
 MEMORY_FIRST_MODE 和 Redis 参数需按需加入 .env；不要假设示例文件包含全部可用开关。
 
+## 后台 Worker（PostgreSQL）
+
+先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用版本 3 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-redis.txt
+docker compose -f compose.postgres.yml -f compose.queue.yml up -d --wait
+.\.venv\Scripts\python.exe -m scripts.postgres_admin init
+.\.venv\Scripts\python.exe worker.py
+```
+
+另一个终端运行 `streamlit run app.py`，选择 PostgreSQL 后提交。关闭 UI 不会结束 Worker；重新打开可查看调度状态、最近节点、checkpoint 和报告。关闭 Worker 会留下租约，重启后最迟在租约过期并完成一次扫描时接管。取消先写入调度记录，最早在下一个节点边界生效。Worker 与 UI 都需要相同的 PostgreSQL 连接配置；研究密钥仅需 Worker 使用。
+
+Worker 完成后会写入 `appstats/run_<run_id>.json`。历史记录按完成时间排序；如果文件缺失或损坏，PostgreSQL 已完成任务仍会列在历史列表，打开时用已保存的 checkpoint 补建并显示相同的历史详情，不重跑研究。`APEXLOGIC_HISTORY_DIR` 若设置，相对路径按项目根目录解析，UI 和 Worker 使用同一个目录。
+
+本轮采用单 Worker 闭环。若 Redis 不可用，已启动的 Worker 会继续扫描 PostgreSQL；新 Worker 仍需连接队列实例后启动。待办：容量限制、全局限流、调度公平性与系统压测。
+
 ## CLI 与导出
 
 ```bash
