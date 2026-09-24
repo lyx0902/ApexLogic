@@ -16,6 +16,8 @@ class ConversationRepository:
         with connect() as db:
             if not db.execute("SELECT 1 FROM schema_migrations WHERE version=6").fetchone():
                 raise RuntimeError("请先运行 python -m scripts.postgres_admin init 应用研究操作迁移")
+            if not db.execute("SELECT 1 FROM schema_migrations WHERE version=10").fetchone():
+                raise RuntimeError("请先运行 python -m scripts.postgres_admin init 应用意图审计迁移")
         self.runner = runner
 
     @staticmethod
@@ -37,7 +39,52 @@ class ConversationRepository:
                 WHERE v.run_id=%s ORDER BY t.turn_seq""", (run_id,)).fetchall()
         return [self._row(row) for row in rows]
 
-    def submit(self, run_id, question, *, idempotency_key, request=None):
+    def list_intent_events(self, run_id, *, limit=50):
+        validate_run_id(run_id)
+        with connect() as db:
+            rows = db.execute("""SELECT * FROM intent_decision_events WHERE run_id=%s
+                ORDER BY created_at DESC,event_id DESC LIMIT %s""", (run_id, limit)).fetchall()
+        return [self._row(row) for row in rows]
+
+    def record_intent_event(self, run_id, trace, *, final_intent):
+        """Persist routing metadata without the question, model response, or API key."""
+        validate_run_id(run_id)
+        event_id = uuid4().hex
+        probabilities = trace.get("jev_probabilities") or {}
+        with connect() as db:
+            db.execute("""INSERT INTO intent_decision_events
+                (event_id,run_id,selection_mode,decision_route,final_intent,
+                 jev_provider,jev_model,jev_status,jev_call_succeeded,jev_accepted,
+                 jev_choice,jev_confidence,follow_up_probability,update_probability,
+                 rewrite_probability,verify_probability,new_research_probability,clarify_probability,
+                 jev_probabilities,jev_error_type,
+                 jev_latency_ms,llm_status,llm_latency_ms,jev_http_status,jev_provider_error_type)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s)""",
+                (event_id, run_id, trace["selection_mode"], trace["decision_route"], final_intent,
+                 trace.get("jev_provider"), trace.get("jev_model"),
+                 trace.get("jev_status", "not_attempted"),
+                 trace.get("jev_status") == "success", bool(trace.get("jev_accepted")),
+                 trace.get("jev_choice"), trace.get("jev_confidence"),
+                 probabilities.get("follow_up"), probabilities.get("update"),
+                 probabilities.get("rewrite"), probabilities.get("verify"),
+                 probabilities.get("new_research"), probabilities.get("clarify"),
+                 json.dumps(probabilities), trace.get("jev_error_type"),
+                 trace.get("jev_latency_ms"), trace.get("llm_status", "not_called"),
+                 trace.get("llm_latency_ms"), trace.get("jev_http_status"),
+                 trace.get("jev_provider_error_type")))
+        return event_id
+
+    @staticmethod
+    def _link_intent_event(db, event_id, run_id, turn_id):
+        if event_id:
+            linked = db.execute("""UPDATE intent_decision_events SET turn_id=%s
+                WHERE event_id=%s AND run_id=%s AND turn_id IS NULL""",
+                (turn_id, event_id, run_id))
+            if linked.rowcount != 1:
+                raise ValueError("意图审计记录无法关联提交任务")
+
+    def submit(self, run_id, question, *, idempotency_key, request=None,
+               intent_event_id=None):
         validate_run_id(run_id)
         question = question.strip()
         if not question or len(question) > 4000:
@@ -63,12 +110,14 @@ class ConversationRepository:
                 if (existing["run_id"] != run_id or existing["question"] != question or
                         (existing["request_json"] or {}).get("intent", "follow_up") != kind):
                     raise ValueError("幂等键已用于其他追问")
+                self._link_intent_event(db, intent_event_id, run_id, existing["turn_id"])
                 return self._row(existing)
             pending_same = db.execute("""SELECT * FROM conversation_turns
                 WHERE run_id=%s AND question=%s AND coalesce(request_json->>'intent','follow_up')=%s
                     AND status IN ('queued','running')
                 ORDER BY turn_seq LIMIT 1""", (run_id, question, kind)).fetchone()
             if pending_same:
+                self._link_intent_event(db, intent_event_id, run_id, pending_same["turn_id"])
                 return self._row(pending_same)
             waiting = db.execute("""SELECT count(*) AS n FROM conversation_turns
                 WHERE status IN ('queued','running')""").fetchone()["n"]
@@ -80,6 +129,7 @@ class ConversationRepository:
                 VALUES (%s,%s,%s,%s,%s::jsonb,'queued') RETURNING *""",
                 (turn_id, run_id, idempotency_key, question,
                  json.dumps(request, ensure_ascii=False))).fetchone()
+            self._link_intent_event(db, intent_event_id, run_id, turn_id)
         return self._row(row)
 
     def claim(self, worker_id, *, lease_seconds):

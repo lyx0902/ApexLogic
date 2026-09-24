@@ -55,7 +55,7 @@ MEMORY_FIRST_MODE 和 Redis 参数需按需加入 .env；不要假设示例文�
 
 ## 后台 Worker（PostgreSQL）
 
-先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用后台调度版本 3、来源速率版本 4、追问版本 5 与报告操作版本 6 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
+先安装 PostgreSQL 和 Redis 可选依赖，运行 `python -m scripts.postgres_admin init` 应用后台调度版本 3、来源速率版本 4、追问版本 5、报告操作版本 6 与 Worker 在线状态版本 7 迁移。`compose.redis.yml` 的 Redis 是可淘汰缓存，**不能**作为任务队列；另用 `compose.queue.yml` 启动启用 AOF、`noeviction` 和独立数据卷的 Redis。设置 `.env` 中的 `APEXLOGIC_QUEUE_REDIS_PASSWORD`、`APEXLOGIC_QUEUE_REDIS_URL`（默认端口 6380），URL 密码须与 Compose 密码相同。
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-redis.txt
@@ -65,6 +65,8 @@ docker compose -f compose.postgres.yml -f compose.queue.yml up -d --wait
 ```
 
 另一个终端运行 `streamlit run app.py`，选择 PostgreSQL 后提交。关闭 UI 不会结束 Worker；重新打开可查看调度状态、最近节点、checkpoint 和报告。关闭 Worker 会留下租约，重启后最迟在租约过期并完成一次扫描时接管。取消先写入调度记录，最早在下一个节点边界生效。Worker 与 UI 都需要相同的 PostgreSQL 连接配置；研究密钥仅需 Worker 使用。
+
+本地也可只运行 `streamlit run app.py`：默认 `APEXLOGIC_UI_AUTO_START_WORKERS=1`，首次打开 PostgreSQL 页面时，Streamlit 静默启动最多 2 个独立 Worker；关闭页面或 Streamlit 不会结束它们。右侧主区域显示实际在线数量、忙碌数与启动/退出进度，可用“目标 Worker 数”下拉框调整。设 `APEXLOGIC_UI_AUTO_START_WORKERS=0` 可关闭**首次**自动启动；首次目标数由 `APEXLOGIC_UI_INITIAL_WORKERS` 指定，之后以 PostgreSQL 保存的页面选择为准，停用已保存的目标需在下拉框选择 0。`APEXLOGIC_UI_WORKER_CONTROL_ENABLED=0` 则完全隐藏页面控制并禁止页面拉起进程。下拉框最大值受研究和报告操作的全局并发上限共同限制；调整数量不修改已有任务配置或各搜索源配额。手工启动的 Worker 计入在线数，但页面不会关闭它们；需要先重新启动旧版本 Worker，才能在版本 7 心跳表中显示。缩容会等待当前操作结束，不强杀同步请求。Worker 日志保存在 `data/worker_logs`（或 APEXLOGIC_DATA_DIR 下）。这一页面控制面向本机开发环境；对外开放前须增加管理权限控制。
 
 Worker 完成后会写入 `appstats/run_<run_id>.json`。历史记录按完成时间排序；如果文件缺失或损坏，PostgreSQL 已完成任务仍会列在历史列表，打开时用已保存的 checkpoint 补建并显示相同的历史详情，不重跑研究。`APEXLOGIC_HISTORY_DIR` 若设置，相对路径按项目根目录解析，UI 和 Worker 使用同一个目录。
 

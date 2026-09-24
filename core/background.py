@@ -112,7 +112,9 @@ class BackgroundWorker:
         self.scheduler = BackgroundScheduler(self.runner)
         self.conversation = ConversationRepository(self.runner)
         self.client = client or queue_client()
-        self.worker_id = worker_id or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:8]}"
+        self.worker_id = worker_id or os.getenv("APEXLOGIC_WORKER_ID") or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:8]}"
+        self.manager_id = os.getenv("APEXLOGIC_WORKER_MANAGER_ID") or None
+        self._drain_event = threading.Event()
         self.lease_seconds = lease_seconds
         try:
             self.client.xgroup_create(STREAM, GROUP, id="0", mkstream=True)
@@ -183,6 +185,8 @@ class BackgroundWorker:
                 (status, status, error, run_id, self.worker_id))
 
     def process(self, run_id):
+        if self._drain_event.is_set():
+            return False
         validate_run_id(run_id)
         with global_slot("research", capacity("APEXLOGIC_GLOBAL_RESEARCH_MAX_INFLIGHT", 2)) as admitted:
             if not admitted:
@@ -238,6 +242,8 @@ class BackgroundWorker:
         return True
 
     def _sweep(self):
+        if self._drain_event.is_set():
+            return
         # PostgreSQL reconciliation also covers missing Redis messages or a flushed stream.
         self.process_followup_once()
         with connect() as db:
@@ -260,12 +266,16 @@ class BackgroundWorker:
             except RunBusyError:
                 pass
         for row in rows:
+            if self._drain_event.is_set():
+                break
             self.process(row["run_id"])
             # A large recovery backlog must not defer all follow-up turns.
             self.process_followup_once()
 
     def process_followup_once(self):
         """PostgreSQL polling is the durable dispatch path for short follow-up turns."""
+        if getattr(self, "_drain_event", None) is not None and self._drain_event.is_set():
+            return False
         with global_slot("followup", capacity("APEXLOGIC_GLOBAL_FOLLOWUP_MAX_INFLIGHT", 2)) as admitted:
             if not admitted:
                 return False
@@ -314,29 +324,38 @@ class BackgroundWorker:
             return True
 
     def run_forever(self):
-        while True:
-            try:
-                self.dispatch()
-                # Recover abandoned consumer-group messages before taking new ones.
-                claimed = self.client.xautoclaim(STREAM, GROUP, self.worker_id, 30_000, "0-0", count=20)
-                messages = claimed[1] if claimed else []
-                if not messages:
-                    batches = self.client.xreadgroup(GROUP, self.worker_id, {STREAM: ">"}, count=1,
-                                                     block=1000)
-                    messages = batches[0][1] if batches else []
-                for message_id, data in messages:
-                    try:
-                        self.process(data["run_id"])
-                    finally:
-                        if self.client.xack(STREAM, GROUP, message_id):
-                            self.client.xdel(STREAM, message_id)
-                self._sweep()
-            except KeyboardInterrupt:
-                raise
-            except Exception:
-                # Redis failure does not discard PostgreSQL work; retry and sweep.
+        from core.worker_control import WorkerPresence
+        presence = WorkerPresence(self.worker_id, self.manager_id)
+        presence.drain_requested = self._drain_event
+        presence.start()
+        try:
+            while not self._drain_event.is_set():
                 try:
+                    self.dispatch()
+                    # Recover abandoned consumer-group messages before taking new ones.
+                    claimed = self.client.xautoclaim(STREAM, GROUP, self.worker_id, 30_000, "0-0", count=20)
+                    messages = claimed[1] if claimed else []
+                    if not messages:
+                        batches = self.client.xreadgroup(GROUP, self.worker_id, {STREAM: ">"}, count=1,
+                                                         block=1000)
+                        messages = batches[0][1] if batches else []
+                    for message_id, data in messages:
+                        if self._drain_event.is_set():
+                            break
+                        try:
+                            self.process(data["run_id"])
+                        finally:
+                            if self.client.xack(STREAM, GROUP, message_id):
+                                self.client.xdel(STREAM, message_id)
                     self._sweep()
+                except KeyboardInterrupt:
+                    raise
                 except Exception:
-                    pass
-                time.sleep(2)
+                    # Redis failure does not discard PostgreSQL work; retry and sweep.
+                    try:
+                        self._sweep()
+                    except Exception:
+                        pass
+                    time.sleep(2)
+        finally:
+            presence.stop()

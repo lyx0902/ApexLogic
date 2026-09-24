@@ -63,6 +63,8 @@ $env:APEXLOGIC_TEST_BACKGROUND_EXCLUSIVE = '1'
 
 历史快照的离线投影和排序测试为 `tests/test_history.py`。`tests/test_parallel_governance.py` 用模拟延迟验证有界并发、稳定合并、AQD 依赖、IRCoT 跳间屏障和全局名额耗尽。独占的 `test_background.py` 另核对排队容量、跨 Worker 入场、跨进程 provider 名额与分钟配额。模拟测试不等于真实供应商端到端稳定性验证；真实 PostgreSQL 和多 Worker 的压测需在独占测试环境执行。
 
+`tests/test_worker_control.py` 的隔离 PostgreSQL 用例核对页面同时校准、Worker 在线心跳、协作式缩容、手工 Worker 保留、启动失败冷却和失联替换；需设置 `APEXLOGIC_TEST_POSTGRES_DSN`，不会提交真实研究任务。页面数量与下拉框可用 Streamlit AppTest 再做一次界面冒烟验证。
+
 执行前安装对应可选依赖。PostgreSQL 初始迁移 SQL 必须随源码可用。
 
 ## 端到端恢复验收

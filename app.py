@@ -24,6 +24,7 @@ from core.history import (load_history_list, load_or_rebuild_run,
 from core.runner import ResearchRunner
 from core.intent import classify_operation
 from core.conversation import ConversationRepository
+from core.worker_control import StreamlitWorkerManager, worker_limit
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -73,6 +74,57 @@ code {
 """,
     unsafe_allow_html=True,
 )
+
+
+def _initial_worker_count() -> int:
+    if os.getenv("APEXLOGIC_UI_AUTO_START_WORKERS", "1").strip().lower() in {"0", "false", "off"}:
+        return 0
+    try:
+        requested = int(os.getenv("APEXLOGIC_UI_INITIAL_WORKERS", "2"))
+    except ValueError:
+        requested = 2
+    return min(max(0, requested), worker_limit())
+
+
+def _change_worker_target(manager_id: str) -> None:
+    try:
+        manager = StreamlitWorkerManager(manager_id)
+        manager.set_target(int(st.session_state["worker_target_count"]))
+        manager.reconcile(default_count=0)
+        st.session_state.pop("worker_control_error", None)
+    except Exception as exc:
+        st.session_state["worker_control_error"] = type(exc).__name__
+
+
+@st.fragment(run_every="5s")
+def render_worker_controls() -> None:
+    """Show live PostgreSQL Worker presence and reconcile the local UI target."""
+    if os.getenv("APEXLOGIC_UI_WORKER_CONTROL_ENABLED", "1").strip().lower() in {"0", "false", "off"}:
+        return
+    try:
+        manager = StreamlitWorkerManager()
+        status = manager.reconcile(default_count=_initial_worker_count())
+    except Exception as exc:
+        st.warning(f"Worker 状态暂不可用（{type(exc).__name__}）；请检查迁移、PostgreSQL 和队列 Redis。")
+        return
+    left, right = st.columns([2, 1])
+    left.markdown(f"**当前 Worker：{status['online']}**")
+    left.caption(f"正在处理 {status['busy']} · 启动中 {status['starting']} · 退出中 {status['draining']}")
+    if status["external"]:
+        left.caption(f"其中 {status['external']} 个由界面外启动，页面不会关闭它们。")
+    target = status["desired"] if status["desired"] is not None else 0
+    if ("worker_target_count" not in st.session_state or
+            st.session_state["worker_target_count"] != target):
+        st.session_state["worker_target_count"] = target
+    right.selectbox("目标 Worker 数", range(worker_limit() + 1),
+                    key="worker_target_count", on_change=_change_worker_target,
+                    args=(manager.manager_id,), help="缩容会等待正在处理的任务结束。")
+    if status["last_error"]:
+        st.warning(f"Worker 启动暂未成功（{status['last_error']}）；将稍后重试。请查看 data/worker_logs。")
+    if st.session_state.get("worker_control_error"):
+        st.warning(f"调整 Worker 数量失败（{st.session_state['worker_control_error']}）。")
+    if status["online"] == 0 and status["starting"] == 0:
+        st.info("当前没有在线 Worker；新研究和报告操作可以提交，但会等待 Worker 启动。")
 
 # ── 通用辅助函数 ───────────────────────────────────────────────────────────────
 
@@ -243,7 +295,8 @@ def render_aqd_subquestion(sub):
 
 
 def render_research_operations(runner: ResearchRunner, run_id: str,
-                               max_revisions: int, pass_threshold: float) -> None:
+                               max_revisions: int, pass_threshold: float,
+                               report_topic: str = "") -> None:
     """Show durable report operations and versioned results for one PG run."""
     from core.background import BackgroundScheduler
     from core.service_limits import QueueFullError
@@ -254,7 +307,7 @@ def render_research_operations(runner: ResearchRunner, run_id: str,
     try:
         repo = ConversationRepository(runner)
     except Exception as exc:
-        st.warning(f"研究操作暂不可用（{type(exc).__name__}）；请检查 PostgreSQL 版本 6 迁移和连接。")
+        st.warning(f"研究操作暂不可用（{type(exc).__name__}）；请检查 PostgreSQL 版本 10 迁移和连接。")
         return
     key = f"research_operation_{run_id}"
     token_key = f"research_operation_token_{run_id}"
@@ -266,13 +319,23 @@ def render_research_operations(runner: ResearchRunner, run_id: str,
                         key=f"research_operation_mode_{run_id}")
     if st.button("提交研究操作", key=f"submit_operation_{run_id}"):
         if mode == "自动识别":
-            decision = classify_operation(command, selected_run_id=run_id)
+            intent_trace = {}
+            decision = classify_operation(command, selected_run_id=run_id, trace=intent_trace,
+                                          report_topic=report_topic)
         else:
             from core.intent import Operation
+            intent_trace = {"selection_mode": "manual", "decision_route": "manual",
+                            "jev_status": "not_attempted", "llm_status": "not_called"}
             decision = (Operation("clarify", clarification="请先输入操作内容。")
                         if not command.strip() else
                         Operation({"追问": "follow_up", "更新": "update", "改写": "rewrite",
                                    "核验": "verify"}[mode], target_run_id=run_id))
+        try:
+            intent_event_id = repo.record_intent_event(
+                decision.target_run_id or run_id, intent_trace, final_intent=decision.intent)
+        except Exception as exc:
+            st.error(f"意图审计记录未保存（{type(exc).__name__}），请检查 PostgreSQL 迁移和连接后重试。")
+            return
         if decision.intent == "clarify":
             st.info(decision.clarification)
         else:
@@ -280,6 +343,7 @@ def render_research_operations(runner: ResearchRunner, run_id: str,
                 if decision.intent in {"follow_up", "update", "rewrite", "verify"}:
                     repo.submit(decision.target_run_id, command,
                                 idempotency_key=st.session_state[token_key],
+                                intent_event_id=intent_event_id,
                                 request={"intent": decision.intent,
                                          "time_scope": decision.time_scope,
                                          "constraints": decision.constraints,
@@ -323,6 +387,47 @@ def render_research_operations(runner: ResearchRunner, run_id: str,
     except Exception as exc:
         st.warning(f"暂时无法读取报告版本（{type(exc).__name__}）。")
         versions = []
+    try:
+        intent_events = repo.list_intent_events(run_id)
+    except Exception as exc:
+        st.warning(f"暂时无法读取意图审计（{type(exc).__name__}）。")
+        intent_events = []
+    with st.expander("意图识别审计", expanded=False):
+        if not intent_events:
+            st.caption("暂无审计记录；历史操作不会补造 Jev 返回数据。")
+        else:
+            route_names = {"rule": "规则", "jev": "Jev", "llm": "LLM", "manual": "手动"}
+            jev_status_names = {"not_attempted": "未调用", "not_sent": "未发送",
+                                "request_failed": "请求失败", "http_error": "接口报错",
+                                "invalid_response": "返回格式无效", "success": "有效返回"}
+            rows = []
+            for event in intent_events:
+                rows.append({
+                    "时间": datetime.fromisoformat(str(event["created_at"])).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+                    "操作记录": str(event.get("turn_id") or "未提交")[:8],
+                    "提交方式": "手动" if event["selection_mode"] == "manual" else "自动",
+                    "最终类型": event["final_intent"],
+                    "判断来源": route_names.get(event["decision_route"], event["decision_route"]),
+                    "Jev 状态": jev_status_names.get(event["jev_status"], event["jev_status"]),
+                    "调用成功": bool(event["jev_call_succeeded"]),
+                    "采用 Jev": bool(event["jev_accepted"]),
+                    "Jev 选择": event.get("jev_choice"),
+                    "置信度": event.get("jev_confidence"),
+                    "追问概率": event.get("follow_up_probability"),
+                    "更新概率": event.get("update_probability"),
+                    "改写概率": event.get("rewrite_probability"),
+                    "核验概率": event.get("verify_probability"),
+                    "新研究概率": event.get("new_research_probability"),
+                    "澄清概率": event.get("clarify_probability"),
+                    "Jev 耗时毫秒": event.get("jev_latency_ms"),
+                    "LLM 状态": event["llm_status"],
+                    "LLM 耗时毫秒": event.get("llm_latency_ms"),
+                    "失败类型": event.get("jev_error_type"),
+                    "HTTP 状态": event.get("jev_http_status"),
+                    "服务商错误": event.get("jev_provider_error_type"),
+                })
+            st.dataframe(rows, width="stretch", hide_index=True)
+            st.caption("时间按本机时区显示；概率为 Jev 返回值，不代表已验证的准确率。")
     version_by_turn = {item["operation_turn_id"]: item for item in versions}
     source_state = {}
     if any(turn["status"] == "completed" for turn in turns):
@@ -406,7 +511,7 @@ def show_history_view(data: dict) -> None:
             data=clean,
             file_name=f"ApexLogic_{safe_t}_历史.md",
             mime="text/markdown",
-            use_container_width=True,
+            width="stretch",
         )
     else:
         st.warning("该记录无最终报告。")
@@ -764,7 +869,7 @@ with st.sidebar:
     start_btn: bool = st.button(
         "🚀 开始深度研究",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not topic.strip(),
     )
 
@@ -794,7 +899,7 @@ with st.sidebar:
             format_func=lambda choice: "— 选择历史记录 —" if choice is None else choice,
             label_visibility="collapsed")
         if selected_history is not None:
-            if st.button("📖 查看此次记录", use_container_width=True):
+            if st.button("📖 查看此次记录", width="stretch"):
                 entry = history_choices[selected_history]
                 try:
                     data = (load_or_rebuild_run(runner, entry["data"]["run_id"])
@@ -810,7 +915,7 @@ with st.sidebar:
                     (selected_storage == "postgres" and
                      any(item["run_id"] == st.session_state.get("active_run_id") for item in run_list)))
     if st.session_state.view_history or showing_task:
-        if st.button("← 返回新研究", use_container_width=True):
+        if st.button("← 返回新研究", width="stretch"):
             st.session_state.view_history = False
             st.session_state.history_data = None
             st.session_state.active_run_id = None
@@ -838,6 +943,8 @@ st.caption(
     "· 四层检索优化 · BGE 两阶段精筛 "
 )
 st.caption("©️南京理工大学计算机科学与技术22级刘宇翔")
+if selected_storage == "postgres":
+    render_worker_controls()
 st.markdown("---")
 
 
@@ -888,7 +995,8 @@ if inspect_run_id and not start_btn and not resume_run_id:
                 st.warning(f"历史详情暂时无法重建（{type(exc).__name__}），以下展示已保存报告。")
             else:
                 show_history_view(historical_view)
-                render_research_operations(runner, inspect_run_id, max_revisions, pass_threshold)
+                render_research_operations(runner, inspect_run_id, max_revisions, pass_threshold,
+                                           report_topic=item["topic"])
                 st.stop()
         render_publication_attempts(saved)
         if saved.get("draft"):
@@ -899,7 +1007,8 @@ if inspect_run_id and not start_btn and not resume_run_id:
                 st.download_button("下载 Markdown 报告", report_text,
                                    file_name=f"apexlogic_{inspect_run_id}.md", mime="text/markdown")
         if selected_storage == "postgres" and item["status"] == "completed":
-            render_research_operations(runner, inspect_run_id, max_revisions, pass_threshold)
+            render_research_operations(runner, inspect_run_id, max_revisions, pass_threshold,
+                                       report_topic=item["topic"])
         with st.expander("执行尝试与已保存轨迹"):
             st.json({"attempts": info["attempts"], "trace": saved.get("execution_trace", [])})
     except Exception as exc:
@@ -913,7 +1022,8 @@ if st.session_state.view_history and not start_btn and not resume_run_id:
         if (selected_storage == "postgres" and history_run_id and
                 any(item["run_id"] == history_run_id and item["status"] == "completed"
                     for item in run_list)):
-            render_research_operations(runner, history_run_id, max_revisions, pass_threshold)
+            render_research_operations(runner, history_run_id, max_revisions, pass_threshold,
+                                       report_topic=st.session_state.history_data.get("topic", ""))
     else:
         st.warning("历史记录数据丢失，请重新选择。")
     st.stop()
@@ -1395,7 +1505,7 @@ if final_draft:
         data=clean_report,
         file_name=f"ApexLogic_{safe_topic}_{ts_str}.md",
         mime="text/markdown",
-        use_container_width=True,
+        width="stretch",
     )
 else:
     st.warning("⚠️ 未生成最终报告，请检查运行期警告或错误日志。")

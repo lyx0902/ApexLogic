@@ -4,7 +4,23 @@
 
 ## 职责与范围
 
-`core/intent.py` 将输入归入新研究、查看、恢复、取消、报告追问、更新、改写、核验或澄清。显式控制指令由规则识别；其他输入最多调用一次模型返回结构化分类。程序再次验证目标任务、状态和可执行路径。模型不能直接调用调度器。页面也提供明确的追问、更新、改写、核验选项，避免分类失败时无法操作。
+`core/intent.py` 将输入归入新研究、查看、恢复、取消、报告追问、更新、改写、核验或澄清。显式控制指令由规则识别；自动识别默认调用原有 LLM 返回结构化分类。可选 Jev 优先路径只为已选报告上的简单操作判断固定类别，其余输入仍由原 LLM 分类。程序再次验证目标任务、状态和可执行路径。模型不能直接调用调度器。页面也提供明确的追问、更新、改写、核验选项，避免分类失败时无法操作。
+
+### 可选 Jev 优先分类
+
+设置 `APEXLOGIC_INTENT_ROUTER=jev` 后，明确的控制指令和 `新研究：` 格式仍由规则处理。已选中报告、输入不超过 180 字且不包含明显时间、格式或复合约束时，请求 Jev 的 `Choice` 答案；候选为追问、更新、改写、核验、新研究和澄清六项。Jev 的描述词分别对应实际执行路径：追问只用原报告与 S/R，更新补搜并建增量版本，改写不补搜而建版本，核验补搜但不建版本，新研究独立排队，澄清交 LLM。查看任务类输入直接绕过 Jev，由已有规则或 LLM 处理。答案结构有效、置信度不低于 0.6、首选概率不低于 0.55 时，前五项才可进入直接采用判断；澄清无论分数多少都回退 LLM。其他需抽取字段的输入、接口失败及不确定结果也走原 LLM。阈值仍需中文样本校准，不能视作准确率保证。
+
+Jev 只提供类别，不抽取任务 ID、时间范围、约束、输出格式或新研究主题。任务 ID 继续由程序从原文或页面选中项确定；Jev 判断新研究后，仅在“研究 HNSW”等简单句式可明确提取主题时直接提交独立研究，主题是“这篇报告”等指代或无法解析时回退 LLM，绝不提交空主题。可能需要抽取可变字段的输入也直接走 LLM。无论哪条链路，用户原文继续传给执行模块；取消和恢复只有显式规则可以触发。手动选择报告操作类型绕过两个分类器。
+
+`APEXLOGIC_JEV_PROVIDER=typesafe`（未指定服务商时的默认值）直接调用 TypeSafe 的 `POST https://api.typesafe.ai/v1/systemone`，默认固定模型 `jev-1.13.0`，优先读取 `TYPESAFE_KEY`，兼容旧变量 `TYPESAFE_API_KEY`。请求的 `state` 只带本次操作文本、选中报告的主题（最多 200 字）和已选任务标记；不传整篇报告、S/R 来源或数据库任务 ID。`questions.operation` 使用 Choice，对六种操作返回类别、全部选项概率和置信度。固定模型版本便于后续对阈值做同版本校准。`vercel` 分支仍调用 Vercel AI Gateway 的 TypeSafe 兼容 API `POST /typesafe/v1/systemone`，默认模型 `typesafe-ai/jev`，读取 `AI_GATEWAY_API_KEY`；`openrouter` 使用 OpenRouter Decisions API，模型默认 `typesafe/jev-1.13`，读取 `OPENROUTER_API_KEY`。三类密钥不交叉使用。本机 `.env` 可设置 `APEXLOGIC_INTENT_ROUTER=jev`、`APEXLOGIC_JEV_PROVIDER=typesafe`、`APEXLOGIC_JEV_MODEL=jev-1.13.0` 和 `TYPESAFE_KEY`；Streamlit 重启后加载。`APEXLOGIC_JEV_TIMEOUT_SECONDS` 默认 2 秒。Jev 配置缺失时自动回到原 LLM。上线前仍需用真实中文操作样本核对误分类、字段保留和端到端时延。协议依据：[TypeSafe API](https://docs.typesafe.ai/api)、[TypeSafe 状态格式](https://docs.typesafe.ai/concepts/state)、[TypeSafe 模型](https://docs.typesafe.ai/models)、[Vercel TypeSafe 兼容 API](https://vercel.com/docs/ai-gateway/sdks-and-apis/typesafe)、[OpenRouter Decisions API](https://openrouter.ai/blog/tutorials/how-to-use-jev/)。
+
+分类器在 INFO 日志中记录 Jev 接受、放弃或失败，以及 Jev/LLM 各自耗时；日志不写输入原文或密钥。Jev 超时后的 LLM 回退会增加一次等待，最终页面耗时应按真实环境测量。
+
+### 意图判断审计
+
+PostgreSQL 版本 8～10 迁移在 `apexlogic.intent_decision_events` 建立独立审计表，增加服务商错误字段及新研究、澄清概率列。第 10 版迁移从旧记录的完整概率 JSON 回填可用的两项历史概率。每次在报告页面点击“提交研究操作”，无论是自动识别还是手动选择，均先保存分类事件；成功排队的报告操作会在提交事务中关联 `conversation_turns.turn_id`。表中分别记录 Jev 调用状态、有效返回与否、是否采用 Jev 判断、最终判断来源、模型与服务商、选择项、置信度、全部选项概率，以及六个便于直接查询的概率列；也记录 Jev/LLM 耗时、HTTP 状态码及服务商错误类型。`success` 表示返回了结构有效的 Choice；是否通过阈值并采用该答案要看 `jev_accepted`。失败记录不保存原始输入、响应正文、错误正文或 API 密钥。
+
+页面的“意图识别审计”折叠区展示最近 50 条事件，含六类概率及是否回退 LLM。旧记录中已有的 Jev 完整分布可回填新研究和澄清概率；从未收到 Jev 响应的历史操作仍无概率。新迁移需运行 `python -m scripts.postgres_admin init`，随后重启 Streamlit。观测表保存的是应用实际收到的模型返回值；概率不是已校准的分类准确率。
 
 报告操作仅支持已完成的 PostgreSQL 任务。SQLite 旧任务继续按原方式查看和恢复，不进入后台操作队列。当前项目没有用户认证或多租户授权；任务 ID 和页面选中项只是定位任务，不能当作访问控制。
 

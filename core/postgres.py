@@ -181,5 +181,37 @@ def initialize():
             if operations_version is None:
                 conn.execute(operations_sql)
                 conn.execute("INSERT INTO schema_migrations VALUES (6,%s)", (operations_checksum,))
+            presence_sql = (Path(__file__).parent.parent / "migrations/postgres/007_worker_presence.sql").read_text(encoding="utf-8")
+            presence_checksum = hashlib.sha256(presence_sql.encode()).hexdigest()
+            presence_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=7").fetchone()
+            if presence_version and presence_version["checksum"] != presence_checksum:
+                raise RuntimeError("Worker presence migration checksum differs")
+            if presence_version is None:
+                conn.execute(presence_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (7,%s)", (presence_checksum,))
+            intent_sql = (Path(__file__).parent.parent / "migrations/postgres/008_intent_decision_events.sql").read_text(encoding="utf-8")
+            intent_checksum = hashlib.sha256(intent_sql.encode()).hexdigest()
+            intent_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=8").fetchone()
+            if intent_version and intent_version["checksum"] != intent_checksum:
+                raise RuntimeError("Intent decision event migration checksum differs")
+            if intent_version is None:
+                conn.execute(intent_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (8,%s)", (intent_checksum,))
+            intent_errors_sql = (Path(__file__).parent.parent / "migrations/postgres/009_intent_provider_errors.sql").read_text(encoding="utf-8")
+            intent_errors_checksum = hashlib.sha256(intent_errors_sql.encode()).hexdigest()
+            intent_errors_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=9").fetchone()
+            if intent_errors_version and intent_errors_version["checksum"] != intent_errors_checksum:
+                raise RuntimeError("Intent provider errors migration checksum differs")
+            if intent_errors_version is None:
+                conn.execute(intent_errors_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (9,%s)", (intent_errors_checksum,))
+            intent_extra_sql = (Path(__file__).parent.parent / "migrations/postgres/010_intent_extra_probabilities.sql").read_text(encoding="utf-8")
+            intent_extra_checksum = hashlib.sha256(intent_extra_sql.encode()).hexdigest()
+            intent_extra_version = conn.execute("SELECT checksum FROM schema_migrations WHERE version=10").fetchone()
+            if intent_extra_version and intent_extra_version["checksum"] != intent_extra_checksum:
+                raise RuntimeError("Intent extra probabilities migration checksum differs")
+            if intent_extra_version is None:
+                conn.execute(intent_extra_sql)
+                conn.execute("INSERT INTO schema_migrations VALUES (10,%s)", (intent_extra_checksum,))
         conn.execute("SET search_path TO apexlogic_checkpoints,public")
         PostgresSaver(conn).setup()

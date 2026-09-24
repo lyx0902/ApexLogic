@@ -6,26 +6,32 @@
 
 输入研究主题，ApexLogic 自动完成问题拆解、多源检索、多跳补搜、报告写作与迭代评审。基于 LangGraph 编排 Researcher、Writer、Reviewer 三个 Agent，将检索证据、执行状态与跨任务记忆连接成完整研究流程。
 
-**Python · LangGraph · Streamlit · BGE · SQLite / PostgreSQL + pgvector · Redis**
+**Python · LangGraph · Streamlit · BGE · SQLite / PostgreSQL + pgvector · Redis · Jev**
 
 [核心能力](#核心能力) · [工作原理](#工作原理) · [快速开始](#快速开始) · [数据库与缓存部署](#数据库与缓存部署) · [配置](#配置) · [评测与开发](#评测与开发) · [模块文档](#模块文档)
 
 ## 核心能力
 
-| 能力 | 实现方式 |
-| --- | --- |
-| 多智能体研究闭环 | Researcher 检索、Writer 起草、Reviewer 评审；按反馈补充研究或定向修订 |
-| 自适应检索 | Thompson Sampling 分配搜索结果配额，结合概念图扩展、AQD 子问题分解与 IRCoT 多跳补搜 |
-| 证据筛选与引用 | BGE 向量召回与重排；普通检索来源和推理补搜来源分别保留引用链路 |
-| 任务中断恢复 | LangGraph Checkpointer 持久化节点状态，保存配置快照、执行尝试与耗时，重启后继续任务 |
-| 跨任务来源记忆 | 保存被接受报告引用的可追溯原文片段，通过 SQLite 或 PostgreSQL / pgvector 检索复用 |
-| 记忆优先检索 | 逐子问题检查历史证据覆盖，只对满足复用条件的问题省去预计划搜索，保留缺口补搜 |
-| 搜索与向量缓存 | 可选 Redis 精确缓存，配合 TTL、命名空间隔离、并发请求合并和故障旁路 |
-| 全流程可观测 | Streamlit 展示逐题搜索资料、引用入选、评审路由、缓存统计及记忆发布尝试历史 |
-| PostgreSQL 后台研究 | UI 提交任务，独立 Worker 执行；PostgreSQL outbox 与租约支持补发及失联恢复 |
-| 报告追问与操作 | 识别追问、更新、改写、核验；Worker 保存问答、核验来源及独立报告版本，原 checkpoint 保持不变 |
+| 能力 | 实现方式                                                                                            |
+| --- |-----------------------------------------------------------------------------------------------------|
+| 多智能体研究闭环 | Researcher 检索、Writer 起草、Reviewer 评审；按反馈补充研究或定向修订                               |
+| 自适应检索 | Thompson Sampling 分配搜索结果配额，结合概念图扩展、AQD 子问题分解与 IRCoT 多跳补搜                 |
+| 证据筛选与引用 | BGE 向量召回与重排；普通检索来源和推理补搜来源分别保留引用链路                                      |
+| 任务中断恢复 | LangGraph Checkpointer 持久化节点状态，保存配置快照、执行尝试与耗时，重启后继续任务                 |
+| 跨任务来源记忆 | 保存被接受报告引用的可追溯原文片段，通过 SQLite 或 PostgreSQL / pgvector 检索复用                   |
+| 记忆优先检索 | 逐子问题检查历史证据覆盖，只对满足复用条件的问题省去预计划搜索，保留缺口补搜                        |
+| 搜索与向量缓存 | 可选 Redis 精确缓存，配合 TTL、命名空间隔离、并发请求合并和故障旁路                                 |
+| 全流程可观测 | Streamlit 展示逐题搜索资料、引用入选、评审路由、缓存统计及记忆发布尝试历史                          |
+| PostgreSQL 后台研究 | UI 提交任务，独立 Worker 执行；PostgreSQL outbox 与租约支持补发及失联恢复                           |
+| 报告追问与操作 | Jev/LLM 识别追问、更新、改写、核验；Worker 保存问答、核验来源及独立报告版本，原 checkpoint 保持不变 |
 
 适合需要跨多个来源建立结论、保留研究依据，以及持续复用已有资料的技术调研与多跳问答任务。
+
+### 最新更新 已添加Jev路由，支持TypeSafe、OpenRouter、Vercel与自定义LLM后端兜底
+
+在报告历史记录中可查看追问、改写、更新和核验的操作类型、来源和状态以及概率与置信指数，即意图识别审计看板，Jev耗时稳定在1s左右，LLM兜底5s以上，性能表现优异。
+
+![databoard.png](docs/handbook/databoard.png)
 
 ## 工作原理
 
@@ -120,7 +126,7 @@ SQLite 页面按节点更新执行结果；PostgreSQL 后台模式通过查询 c
 
 ### 意图识别与报告追问操作
 
-- **操作识别**：`core/intent.py` 用确定性规则处理明确的任务控制指令，并用一次结构化模型判断区分新研究、报告追问、更新、改写、核验等意图；页面也支持直接选择操作类型。分类结果只描述请求，实际执行路径由程序决定。
+- **操作识别**：`core/intent.py` 用确定性规则处理明确的任务控制指令；自动识别默认仍使用结构化 LLM 判断。可选的 Jev 优先路径处理已选报告上的简单追问、更新、改写、核验及明确主题的新研究；澄清、复杂输入、低置信度或 Jev 不可用时回到原 LLM；页面也支持直接选择报告操作类型。PostgreSQL 意图审计表保存调用状态、判断来源和六类概率，历史页可查看；分类结果只描述请求，实际执行路径由程序决定。
 - **持久化与后台处理**：`core/conversation.py` 将已完成 PostgreSQL 任务的操作排入 `conversation_turns`；`core/background.py` 的 Worker 按任务顺序领取、续租并保存结果，页面关闭后仍可处理和回看。
 - **追问与报告操作**：`core/followup.py` 从原 checkpoint 的报告及 S/R 来源回答追问，不进行新检索。`core/report_operations.py` 将改写保存为独立报告版本；更新与核验分别向 DuckDuckGo、Tavily 请求最多 3 条新资料，用独立的 U 引用记录结果。更新生成增量版本，核验保存结论，均不覆盖原报告或 checkpoint。详见[研究操作模块文档](docs/handbook/intent-and-followup.md)。
 
@@ -214,6 +220,8 @@ APEXLOGIC_STORAGE_BACKEND=postgres
 ```
 
 `init` 创建或升级业务表、pgvector 扩展与 checkpoint 表；更新项目后也用此命令应用新增迁移。数据库客户端连接 `127.0.0.1:5433`、数据库 / 用户 `apexlogic`，选择 `apexlogic` 和 `apexlogic_checkpoints` 两个 schema 即可浏览业务与状态表。
+
+PostgreSQL 后台模式可由 Streamlit 页面静默启动独立 Worker，默认目标数量为 2；主界面显示实际在线数量，并可下拉调整。Worker 在 Streamlit 关闭后继续执行。首次使用前需启动独立队列 Redis 并应用版本 7 迁移；启动选项和缩容规则见[使用与配置](docs/handbook/operations.md)。
 
 切换后端不会自动搬迁旧任务。旧任务仍在原后端恢复；已有 SQLite 记忆可先预览，再显式导入：
 

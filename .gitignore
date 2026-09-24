@@ -32,6 +32,7 @@ tests/*
 !tests/test_intent.py
 !tests/test_conversation.py
 !tests/test_report_operations.py
+!tests/test_worker_control.py
 !docs/
 docs/*
 !docs/redis-cache.md

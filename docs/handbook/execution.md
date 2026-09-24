@@ -76,6 +76,8 @@ Worker 通过 `ResearchRunner.stream` 执行，保留原配置快照与 checkpoi
 
 Worker 还会扫描 PostgreSQL 中的追问、更新、改写和核验记录。这些操作有独立租约与并发名额，读取已完成任务的 checkpoint，但不改变原研究的调度状态或节点进度。更新与改写的新报告写入 `report_versions`，原报告仍在 checkpoint 中；核验只保存操作结果。其排队、接管与失败规则见[意图识别与报告操作](intent-and-followup.md)。
 
+版本 7 的 `worker_instances` 保存 Worker 空闲与执行时的心跳，`worker_targets` 保存本机 Streamlit 管理的目标数量。页面每 5 秒查询并校准，启动时先在 PostgreSQL 占位再创建隐藏进程，避免多个会话同时重复启动。超过 20 秒没有心跳的实例不计入在线数量；界面只对本机管理的 Worker 请求协作式退出。若 Worker 在 UI 关闭后结束，需再次打开页面才会补足目标数量；任务本身仍由 PostgreSQL 保留和恢复。
+
 ## 验证
 
 ```bash
