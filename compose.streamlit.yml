@@ -1,0 +1,49 @@
+# Add only this service to the existing project. Never use --remove-orphans.
+name: apexlogic
+
+services:
+  streamlit:
+    image: apexlogic-streamlit:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${APEXLOGIC_BUILD_PROXY:-http://host.docker.internal:7890}
+        HTTPS_PROXY: ${APEXLOGIC_BUILD_PROXY:-http://host.docker.internal:7890}
+        http_proxy: ${APEXLOGIC_BUILD_PROXY:-http://host.docker.internal:7890}
+        https_proxy: ${APEXLOGIC_BUILD_PROXY:-http://host.docker.internal:7890}
+    init: true
+    hostname: apexlogic-streamlit
+    env_file:
+      - .env
+    environment:
+      APEXLOGIC_CONTAINER_MODE: "1"
+      APEXLOGIC_DATA_DIR: /app/data
+      APEXLOGIC_HISTORY_DIR: /app/appstats
+      APEXLOGIC_DOCKER_POSTGRES_HOST: postgres
+      APEXLOGIC_DOCKER_POSTGRES_PORT: "5432"
+      APEXLOGIC_DOCKER_REDIS_HOST: redis
+      APEXLOGIC_DOCKER_REDIS_PORT: "6379"
+      APEXLOGIC_DOCKER_QUEUE_HOST: queue
+      APEXLOGIC_DOCKER_QUEUE_PORT: "6379"
+      APEXLOGIC_PROXY_UPSTREAM_HOST: host.docker.internal
+      APEXLOGIC_PROXY_UPSTREAM_PORT: "7890"
+      APEXLOGIC_CONTAINER_WAIT_SECONDS: "120"
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+      NO_PROXY: localhost,127.0.0.1,postgres,redis,queue,host.docker.internal
+      no_proxy: localhost,127.0.0.1,postgres,redis,queue,host.docker.internal
+    ports:
+      - "127.0.0.1:${APEXLOGIC_STREAMLIT_PORT:-8501}:8501"
+    volumes:
+      - ./data:/app/data
+      - ./appstats:/app/appstats
+      - ./reports:/app/reports
+    networks:
+      - existing
+    restart: unless-stopped
+    stop_grace_period: 25s
+
+networks:
+  existing:
+    external: true
+    name: apexlogic_default
